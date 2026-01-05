@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  # PostgreSQL
+  postgres:
+    image: postgres:16
+    container_name: chat-system-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: chat
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Database Migrations (one-time)
+  migrate:
+    image: migrate/migrate
+    container_name: chat-system-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../migrations:/migrations
+    command:
+      [
+        "-path=/migrations",
+        "-database=postgres://user:password@postgres:5432/chat?sslmode=disable",
+        "up"
+      ]
+    restart: "no"
+
+  # Redis
+  redis:
+    image: redis:7
+    container_name: chat-system-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# Volumes
+volumes:
+  pgdata:
+  redis_data:
