@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	uid, ok := ctx.Value("userID").(string)
+	return uid, ok
+}
+
 // GetEnv retrieves an environment variable or returns a default value
 func GetEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
@@ -17,7 +22,6 @@ func GetEnv(key, defaultValue string) string {
 
 	return defaultValue
 }
-
 
 // TimeToString converts time to a standard database-friendly string format
 func TimeToString(t time.Time) string {

@@ -35,3 +35,10 @@ logging:
   level: info # debug, info, warn, error
   format: json # json or console
   output: stdout
+
+# Redis
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0

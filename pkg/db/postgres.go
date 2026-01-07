@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/ak-repo/go-chat-system/config"
@@ -31,7 +30,6 @@ func NewPostgresDB(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, erro
 		cfg.Database.SSLMode,
 	)
 
-	log.Println(dsn)
 	poolConfig, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse pool config: %w", err)

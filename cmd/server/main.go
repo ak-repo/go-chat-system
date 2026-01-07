@@ -12,7 +12,9 @@ import (
 
 	"github.com/ak-repo/go-chat-system/config"
 	http_pkg "github.com/ak-repo/go-chat-system/internal/transport/http"
+	websocket_pkg "github.com/ak-repo/go-chat-system/internal/transport/websocket"
 
+	"github.com/ak-repo/go-chat-system/pkg/clients"
 	"github.com/ak-repo/go-chat-system/pkg/db"
 	"github.com/ak-repo/go-chat-system/pkg/logger"
 
@@ -38,7 +40,16 @@ func main() {
 	}
 	defer db.Close()
 
-	handler := http_pkg.NewRoutes(db, cfg)
+	// WebSocket hub
+	hub := websocket_pkg.NewHub()
+	go hub.Run()
+
+	// Redis client
+	redisClient := clients.NewRedisClient(&cfg.Redis)
+	defer redisClient.Close()
+	
+
+	handler := http_pkg.NewHandler(db, cfg, hub, redisClient)
 
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),

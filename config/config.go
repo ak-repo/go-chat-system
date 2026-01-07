@@ -12,6 +12,7 @@ type Config struct {
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Logging  LoggingConfig  `mapstructure:"logging"`
 	Server   Server         `mapstructure:"server"`
+	Redis    Redis          `mapstructure:"redis"`
 }
 type Server struct {
 	Host string `mapstructure:"host"`
@@ -42,6 +43,14 @@ type JWTConfig struct {
 	Secret string        `mapstructure:"secret"`
 	Expiry time.Duration `mapstructure:"expiry"`
 	Issuer string        `mapstructure:"issuer"`
+}
+
+// Redis
+type Redis struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 // LOGGING
