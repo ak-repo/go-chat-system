@@ -1,0 +1,45 @@
+func HTTPResponseWrapper(fn WrappedHTTPFn) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		statusCode, obj, appErr := fn(w, r)
+
+		orgCode := ctxGetString(r, CtxOrgCode, "unknown")
+		appVersion := ctxGetString(r, CtxAppVersion, "unknown")
+		userCode := ctxGetString(r, CtxUserCode, "unknown")
+
+		ipAddress := ctxGetString(r, CtxIPAddress, "")
+		if ipAddress == "" {
+			ipAddress = getClientIP(r) // fallback
+		}
+
+		if appErr != nil && appErr.Err != nil {
+			source := getSourceFromURL(r.URL.Path)
+
+			logSource := constants.LogSourceBE
+			if source == "mobile" {
+				logSource = constants.LogSourceMobile
+			} else if source == "admin" {
+				logSource = constants.LogSourceAdmin
+			}
+			if userCode != "unknown" && userCode != "" {
+				logSource = constants.LogSource(fmt.Sprintf("%s | User Code: %s", logSource, userCode))
+			}
+
+			logParams := utils.NewLogParams().
+				WithLevel(telegram.LogLevelError).
+				WithMessage(appErr.Error()).
+				WithSource(logSource).
+				WithCompany(orgCode).
+				WithAppVersion(appVersion).
+				WithIPAddress(ipAddress).
+				WithStack(append([]string{r.URL.Path, " | "}, appErr.Op...)).
+				WithKind(appErr.Kind).
+				WithParameter(string(constants.LogOpApiCall)).
+				WithCode(appErr.Code).
+				WithComponent(constants.LogCompRequestResponse)
+
+			utils.Log(logParams)
+		}
+
+		writeJSON(w, statusCode, obj)
+	}
+}
