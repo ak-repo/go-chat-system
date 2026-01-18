@@ -61,7 +61,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 
-	_, err = database.DB.Exec(
+	_, err = database.GetDB().Exec(
 		ctx,
 		query,
 		userID,
@@ -120,7 +120,7 @@ func UserLogin(w http.ResponseWriter, r *http.Request) {
 		WHERE email = $1
 	`
 
-	err := database.DB.QueryRow(ctx, query, req.Email).
+	err := database.GetDB().QueryRow(ctx, query, req.Email).
 		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role)
 
 	if err != nil {

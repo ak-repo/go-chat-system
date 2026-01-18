@@ -7,8 +7,9 @@ import (
 	"github.com/ak-repo/go-chat-system/model"
 )
 
-func SuccessResponse[T any](data T) model.ApiResponse {
-	return model.ApiResponse{
+func SuccessResponse[T any](data T) *model.ApiResponse {
+
+	return &model.ApiResponse{
 		Status: "ok",
 		Data:   data,
 	}

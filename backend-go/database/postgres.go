@@ -9,7 +9,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var DB *pgxpool.Pool
+type DBconnection struct {
+	Pool *pgxpool.Pool
+}
+
+var DB DBconnection
 
 func ConnectDB() error {
 	dsn := fmt.Sprintf(
@@ -43,9 +47,12 @@ func ConnectDB() error {
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
-
-	DB = pool
+	DB.Pool = pool
 
 	return nil
 
+}
+
+func GetDB() *pgxpool.Pool {
+	return DB.Pool
 }

@@ -6,7 +6,9 @@ import (
 
 	"github.com/ak-repo/go-chat-system/database"
 	"github.com/ak-repo/go-chat-system/transport/handler"
+	"github.com/ak-repo/go-chat-system/transport/injector"
 	"github.com/ak-repo/go-chat-system/transport/websocket"
+	"github.com/ak-repo/go-chat-system/transport/wrapper"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 
@@ -22,6 +24,9 @@ func Router() chi.Router {
 	v1 := chi.NewRouter()
 	api := chi.NewRouter()
 
+	// injector -> contains all services and repository
+	app := injector.Init()
+
 	// Health checks
 	r.Get("/redis-health", func(w http.ResponseWriter, r *http.Request) {
 		if err := database.RedisClient.Ping(r.Context()).Err(); err != nil {
@@ -33,7 +38,7 @@ func Router() chi.Router {
 
 	})
 	r.Get("/db-health", func(w http.ResponseWriter, r *http.Request) {
-		if err := database.DB.Ping(r.Context()); err != nil {
+		if err := database.GetDB().Ping(r.Context()); err != nil {
 			http.Error(w, "db down :"+err.Error(), http.StatusServiceUnavailable)
 			return
 		}
@@ -53,6 +58,19 @@ func Router() chi.Router {
 		r.Use(mdware.AuthMiddleware())
 		r.Use(mdware.RateLimitRedis(mdware.UserKey, 10, time.Minute))
 		r.Get("/home", handler.Home)
+		r.Get("/users", wrapper.HTTPResponseWrapper(app.UserService.SearchUser))
+	})
+
+	// Frineds routes
+	v1.Route("/friends", func(r chi.Router) {
+		r.Use(mdware.AuthMiddleware())
+		r.Use(mdware.RateLimitRedis(mdware.UserKey, 10, time.Minute))
+
+		r.Get("/", wrapper.HTTPResponseWrapper(app.FriendService.ListFriends))
+		r.Post("/sent-req", wrapper.HTTPResponseWrapper(app.FriendService.CreateRequest))
+		r.Post("/block", wrapper.HTTPResponseWrapper(app.FriendService.BlockUser))
+		r.Post("/accept", wrapper.HTTPResponseWrapper(app.FriendService.AcceptRequest))
+
 	})
 
 	//----------------Websocket----------------------
@@ -70,3 +88,10 @@ func Router() chi.Router {
 
 	return r
 }
+
+// friendHandler := handler.NewFriendHandler(friendService)
+
+// r.Post("/friends/request", friendHandler.SendRequest)
+// r.Post("/friends/accept", friendHandler.AcceptRequest)
+// r.Post("/friends/block", friendHandler.BlockUser)
+// r.Get("/friends", friendHandler.ListFriends)

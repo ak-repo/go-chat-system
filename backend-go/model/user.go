@@ -13,3 +13,10 @@ type User struct {
 	CreatedAt    time.Time `db:"created_at" json:"created_at"` // creation timestamp
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"` // creation timestamp
 }
+
+type SearchUser struct {
+	ID       string `db:"id" json:"id"` // unique identifier
+	Username string `db:"username" json:"username"`
+	Email    string `db:"email" json:"email"`
+	Role     string `db:"role" json:"role"`
+}

@@ -1,7 +1,305 @@
-case c := <-h.register:
-    conns, ok := h.clients[c.userID]
-    if !ok {
-        conns = make(map[*Client]bool)
-        h.clients[c.userID] = conns
-    }
-    conns[c] = true
+Below is the **working flow of the Friends feature**, explained **end-to-end**, in **execution order**, mapped to your **clean architecture**, and aligned with your **current WebSocket chat**.
+
+No code this time — only **how the system actually behaves at runtime**.
+This is the mental model you must internalize before writing more code.
+
+---
+
+# 1. Actors & Systems Involved
+
+### Actors
+
+* **User A** (sender)
+* **User B** (receiver)
+
+### Systems
+
+* HTTP API (friend actions)
+* Database (friend state)
+* WebSocket (real-time messaging)
+* Hub (message routing)
+
+---
+
+# 2. High-Level Lifecycle (WhatsApp-Style)
+
+```
+Discover user → Send request → Accept → Become friends → Chat allowed
+```
+
+Until **Accept**, chat is **blocked**.
+
+---
+
+# 3. Detailed Working Flow (Step-by-Step)
+
+## STEP 1 — User Discovery (by Email)
+
+**Frontend**
+
+1. User A enters B’s email
+2. Frontend calls:
+
+```
+GET /users/lookup?email=b@email.com
+```
+
+**Backend**
+
+* Finds user by email
+* Returns `user_id` (internal only)
+
+⚠️ Frontend **never exposes user_id publicly** after this.
+
+---
+
+## STEP 2 — Send Friend Request
+
+### 2.1 HTTP Request
+
+**User A → Backend**
+
+```
+POST /friends/request
+```
+
+```json
+{
+  "to": "userB-id"
+}
+```
+
+---
+
+### 2.2 Usecase Logic
+
+1. Reject if `A == B`
+2. Check:
+
+   * Already friends?
+   * Pending request exists?
+   * Blocked?
+3. Create `friend_requests` row:
+
+```
+sender=A
+receiver=B
+status=pending
+```
+
+---
+
+### 2.3 Database State
+
+| sender | receiver | status  |
+| ------ | -------- | ------- |
+| A      | B        | pending |
+
+No friendship yet.
+
+---
+
+## STEP 3 — Notify Receiver (Optional, Realtime)
+
+If User B is online:
+
+### WebSocket Event
+
+```json
+{
+  "event": "friend.request",
+  "sender_id": "A",
+  "data": {
+    "email": "a@email.com"
+  }
+}
+```
+
+This is **notification only**, not state change.
+
+---
+
+## STEP 4 — Receiver Accepts Request
+
+### 4.1 HTTP Call
+
+**User B → Backend**
+
+```
+POST /friends/accept
+```
+
+```json
+{
+  "request_id": "uuid"
+}
+```
+
+---
+
+### 4.2 Usecase Logic
+
+1. Validate request belongs to B
+2. Update request → `accepted`
+3. Create friendships:
+
+```
+friends:
+(A → B)
+(B → A)
+```
+
+---
+
+### 4.3 Database State
+
+#### `friend_requests`
+
+| sender | receiver | status   |
+| ------ | -------- | -------- |
+| A      | B        | accepted |
+
+#### `friends`
+
+| user | friend |
+| ---- | ------ |
+| A    | B      |
+| B    | A      |
+
+---
+
+## STEP 5 — Notify Both Users
+
+### WebSocket Event
+
+```json
+{
+  "event": "friend.accepted",
+  "sender_id": "B"
+}
+```
+
+Both clients update UI.
+
+---
+
+## STEP 6 — List Friends
+
+### HTTP Request
+
+```
+GET /friends
+```
+
+### Response
+
+```json
+[
+  {
+    "id": "userB-id",
+    "email": "b@email.com",
+    "online": true
+  }
+]
+```
+
+---
+
+## STEP 7 — Enforce Friendship During Chat (CRITICAL)
+
+### When User A Sends Message
+
+```json
+{
+  "event": "chat.message",
+  "receiver_id": "B",
+  "receiver_type": "user"
+}
+```
+
+### WebSocket `ReadPump`
+
+```go
+AreFriends(A, B)?
+```
+
+| Result | Action          |
+| ------ | --------------- |
+| true   | Message routed  |
+| false  | Message dropped |
+
+This happens **before Hub routing**.
+
+---
+
+## STEP 8 — Chat Works Normally
+
+Once friends:
+
+* Messages delivered
+* Presence shown
+* Typing allowed
+* Groups allowed
+
+---
+
+# 4. Blocking Flow (Important)
+
+### User A blocks User B
+
+Effects:
+
+* Cannot send messages
+* Cannot send friend requests
+* Removed from friend list
+* Dropped in WebSocket
+
+This is enforced:
+
+* In HTTP
+* In WebSocket
+
+---
+
+# 5. What Is NOT Part of Friends Flow (Yet)
+
+❌ Conversations
+❌ Message persistence
+❌ Groups
+❌ Read receipts
+❌ Typing indicators
+
+Adding these **before friends** creates tech debt.
+
+---
+
+# 6. One-Sentence Mental Model
+
+> **Friends is an authorization layer sitting between identity and messaging.**
+
+Once you understand this, everything becomes obvious.
+
+---
+
+# 7. Next Logical Step (After Friends)
+
+The **next unavoidable abstraction** is:
+
+> **Conversation**
+
+User-based routing will break once:
+
+* You add groups
+* You add history
+* You add read receipts
+
+---
+
+If you want next:
+
+1. Conversation flow (diagram style)
+2. Message persistence flow
+3. Group chat flow
+4. Presence / online flow
+
+Reply with **one number** only.
