@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/ak-repo/go-chat-system/database"
-	"github.com/ak-repo/go-chat-system/transport/handler"
 	"github.com/ak-repo/go-chat-system/transport/injector"
 	"github.com/ak-repo/go-chat-system/transport/websocket"
 	"github.com/ak-repo/go-chat-system/transport/wrapper"
@@ -49,15 +48,14 @@ func Router() chi.Router {
 	// Authentication
 	v1.Group(func(r chi.Router) {
 		r.Use(mdware.RateLimitRedis(mdware.IPKey, 10, time.Minute))
-		r.Post("/register", handler.Register)
-		r.Post("/login", handler.UserLogin)
+		r.Post("/register", wrapper.HTTPResponseWrapper(app.AuthService.Register))
+		r.Post("/login", wrapper.HTTPResponseWrapper(app.AuthService.Login))
 	})
 
 	// User private routes
 	v1.Route("/user", func(r chi.Router) {
 		r.Use(mdware.AuthMiddleware())
 		r.Use(mdware.RateLimitRedis(mdware.UserKey, 10, time.Minute))
-		r.Get("/home", handler.Home)
 		r.Get("/users", wrapper.HTTPResponseWrapper(app.UserService.SearchUser))
 	})
 
@@ -77,7 +75,7 @@ func Router() chi.Router {
 	hub := websocket.NewHub()
 	go hub.Run()
 
-	wsHandler := handler.NewWebsocketHandler(hub)
+	wsHandler := wrapper.NewWebsocketHandler(hub)
 	v1.Group(func(r chi.Router) {
 		r.Use(mdware.AuthMiddleware())
 		r.Get("/ws", wsHandler.Handler)

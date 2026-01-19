@@ -11,10 +11,12 @@ import (
 type Container struct {
 
 	// Repositories
+	AuthRepo   repository.AuthRepository
 	FriendRepo repository.FriendRepository
 	UserRepo   repository.UserRepository
 
 	// Service
+	AuthService   service.AuthService
 	FriendService service.FriendService
 	UserService   service.UserService
 }
@@ -28,15 +30,19 @@ func Init() *Container {
 	// 1) Create repositories (DB layer)
 	friendRepo := repository.NewFriendRepositoryImpl(db)
 	userRepo := repository.NewUserRepositoryImpl(db)
+	authRepo := repository.NewAuthRepositoryImpl(db)
 
 	// 2) Create services (business layer)
 	friendService := service.NewFriendServiceImpl(friendRepo)
 	userService := service.NewUserServiceImpl(userRepo)
+	authService := service.NewAuthRepositoryImpl(authRepo)
 
 	return &Container{
 		FriendRepo:    friendRepo,
 		FriendService: friendService,
 		UserRepo:      userRepo,
 		UserService:   userService,
+		AuthRepo:      authRepo,
+		AuthService:   authService,
 	}
 }
