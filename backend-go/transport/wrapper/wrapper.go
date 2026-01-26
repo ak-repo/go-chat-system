@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/ak-repo/go-chat-system/model"
 	"github.com/ak-repo/go-chat-system/pkg/utils"
 )
 
-type WrappedFn func(w http.ResponseWriter, r *http.Request) (int, *model.ApiResponse, error)
+type WrappedFn func(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 
 func HTTPResponseWrapper(fn WrappedFn) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +23,7 @@ func HTTPResponseWrapper(fn WrappedFn) http.HandlerFunc {
 		}
 
 		if err != nil {
-			utils.ErrorResponse(w, "error occurred", err, statusCode, r)
+			utils.ErrorResponse(w, "error occurred", err, statusCode)
 			return
 		}
 
@@ -32,9 +31,7 @@ func HTTPResponseWrapper(fn WrappedFn) http.HandlerFunc {
 	}
 }
 
-// func WSHandlerWrapper(fn WrappedFn) // TODO: ws wrapper
-
-func writeJSON(w http.ResponseWriter, statusCode int, obj *model.ApiResponse) {
+func writeJSON(w http.ResponseWriter, statusCode int, obj *utils.APIResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 

@@ -1,38 +1,25 @@
 package model
 
-import "time"
-
-type FriendRequestStatus string
-
-const (
-	FriendPending  FriendRequestStatus = "pending"
-	FriendAccepted FriendRequestStatus = "accepted"
-	FriendRejected FriendRequestStatus = "rejected"
-	FriendBlocked  FriendRequestStatus = "blocked"
+import (
+	"database/sql"
+	"time"
 )
 
-type FriendRequest struct {
-	ID         string
-	SenderID   string
-	ReceiverID string
-	Status     FriendRequestStatus
-	CreatedAt  time.Time
+// DAO
+type Friend struct {
+	UserID     string
+	FriendID   string
+	CreatedAt  time.Time    `json:"created_at,omitempty" db:"created_at" `
+	ModifiedAt time.Time    `json:"modified_at,omitempty" db:"modified_at" `
+	DeletedAt  sql.NullTime `json:"deleted_at,omitempty" db:"deleted_at" `
 }
 
-type Friend struct {
+type FriendDTO struct {
 	UserID      string
 	FriendID    string
 	FriendName  string
 	FriendEmail string
-	Since       time.Time
+	CreatedAt   time.Time `json:"created_at,omitempty" db:"created_at" `
 }
 
-type ListFriendRequest struct {
-	ID          string
-	SenderID    string
-	ReceiverID  string
-	Status      FriendRequestStatus
-	FriendName  string
-	FriendEmail string
-	CreatedAt   time.Time
-}
+type FriendsDTO []*FriendDTO
