@@ -18,7 +18,9 @@ func Router() chi.Router {
 
 	// global middleware
 	r.Use(middleware.Logger)
+	r.Use(middleware.RequestID)
 	r.Use(mdware.CORS())
+	r.Use(mdware.Recover())
 
 	// injector -> contains all services and repository
 	app := injector.Init()
@@ -31,6 +33,7 @@ func Router() chi.Router {
 			auth.Use(mdware.RateLimitRedis(mdware.IPKey, 10, time.Minute))
 			auth.Post("/auth/register", wrapper.HTTPResponseWrapper(app.UserService.Register))
 			auth.Post("/auth/login", wrapper.HTTPResponseWrapper(app.UserService.Login))
+			auth.Post("/auth/refresh", wrapper.HTTPResponseWrapper(app.UserService.RefreshToken))
 		})
 
 		// ---------------- Protected routes ----------------
@@ -59,8 +62,11 @@ func Router() chi.Router {
 				b.Post("/unblock", wrapper.HTTPResponseWrapper(app.BlockService.UnblockUser))
 			})
 
+			// Messages
+			pr.Get("/messages", wrapper.HTTPResponseWrapper(app.MessageService.GetMessages))
+
 			// Websocket
-			hub := websocket.NewHub()
+			hub := websocket.NewHub(app.MessageService)
 			go hub.Run()
 
 			wsHandler := wrapper.NewWebsocketHandler(hub)
@@ -69,6 +75,22 @@ func Router() chi.Router {
 	})
 
 	// ---------------- Health checks ----------------
+	r.Get("/health/live", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	r.Get("/health/ready", func(w http.ResponseWriter, r *http.Request) {
+		if err := database.RedisClient.Ping(r.Context()).Err(); err != nil {
+			http.Error(w, "redis not ready", http.StatusServiceUnavailable)
+			return
+		}
+		if err := database.GetDB().Ping(r.Context()); err != nil {
+			http.Error(w, "database not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.Write([]byte("ok"))
+	})
+
 	r.Get("/redis-health", func(w http.ResponseWriter, r *http.Request) {
 		if err := database.RedisClient.Ping(r.Context()).Err(); err != nil {
 			http.Error(w, "redis down: "+err.Error(), http.StatusServiceUnavailable)

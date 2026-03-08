@@ -26,9 +26,6 @@ func ErrorResponse(w http.ResponseWriter, message string, err error, statusCode 
 		Status:  "error",
 		Message: message,
 	}
-	if err != nil {
-		response.Error = err.Error()
-	}
 
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(&response)

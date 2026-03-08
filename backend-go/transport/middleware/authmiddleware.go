@@ -23,7 +23,12 @@ func AuthMiddleware() Middleware {
 				token = strings.TrimPrefix(authHeader, "Bearer ")
 			}
 
-			// 2. Fallback to cookie if no bearer token
+			// 2. Fallback to query param (for WebSocket)
+			if token == "" {
+				token = r.URL.Query().Get("token")
+			}
+
+			// 3. Fallback to cookie if no bearer token
 			if token == "" {
 				cookie, err := r.Cookie("access")
 				if err != nil {
@@ -37,14 +42,14 @@ func AuthMiddleware() Middleware {
 				token = cookie.Value
 			}
 
-			// 3. Validate token
+			// 4. Validate token
 			claims, err := jwt.ValidateToken(token)
 			if err != nil {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
 
-			// 4. Inject user ID into request context
+			// 5. Inject user ID into request context
 			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

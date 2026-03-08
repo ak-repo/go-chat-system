@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { AuthContext } from "./context";
 import { loginService, registerService } from "../api/services";
+import { setToken, removeToken } from "../api/api";
 
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -25,6 +26,7 @@ function AuthProvider({ children }) {
     try {
       const { data } = await loginService(email, password);
       setUser(data.user);
+      setToken(data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       return true;
     } finally {
@@ -35,7 +37,10 @@ function AuthProvider({ children }) {
   const register = async (username, email, password) => {
     setLoading(true);
     try {
-      await registerService(username, email, password);
+      const { data } = await registerService(username, email, password);
+      setUser(data.user);
+      setToken(data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
       return true;
     } finally {
       setLoading(false);
@@ -44,6 +49,7 @@ function AuthProvider({ children }) {
 
   const logout = () => {
     setUser(null);
+    removeToken();
     localStorage.removeItem("user");
   };
 

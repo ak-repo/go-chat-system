@@ -2,8 +2,10 @@ package wrapper
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/ak-repo/go-chat-system/pkg/errs"
 	"github.com/ak-repo/go-chat-system/pkg/utils"
 )
 
@@ -23,12 +25,35 @@ func HTTPResponseWrapper(fn WrappedFn) http.HandlerFunc {
 		}
 
 		if err != nil {
-			utils.ErrorResponse(w, "error occurred", err, statusCode)
+			userMsg := getUserFriendlyMessage(err)
+			utils.ErrorResponse(w, userMsg, nil, statusCode)
 			return
 		}
 
 		writeJSON(w, statusCode, obj)
 	}
+}
+
+func getUserFriendlyMessage(err error) string {
+	if errors.Is(err, errs.ErrValidation) {
+		return "validation failed"
+	}
+	if errors.Is(err, errs.ErrUnauthorized) {
+		return "unauthorized"
+	}
+	if errors.Is(err, errs.ErrForbidden) {
+		return "forbidden"
+	}
+	if errors.Is(err, errs.ErrNotFound) {
+		return "resource not found"
+	}
+	if errors.Is(err, errs.ErrConflict) {
+		return "conflict"
+	}
+	if errors.Is(err, errs.ErrBadRequest) {
+		return "bad request"
+	}
+	return "an error occurred"
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, obj *utils.APIResponse) {

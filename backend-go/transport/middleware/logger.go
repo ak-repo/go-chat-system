@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ak-repo/go-chat-system/pkg/logger"
+	"github.com/go-chi/chi/middleware"
 	"go.uber.org/zap"
 )
 
@@ -26,7 +27,13 @@ func Logger() Middleware {
 
 			next.ServeHTTP(sw, r)
 
+			reqID := middleware.GetReqID(r.Context())
+			if reqID == "" {
+				reqID = "unknown"
+			}
+
 			logger.Logger.Info("http request",
+				zap.String("request_id", reqID),
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.Int("status", sw.status),

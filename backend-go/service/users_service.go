@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ak-repo/go-chat-system/model"
@@ -18,6 +19,7 @@ type UserService interface {
 	SearchUser(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 	Register(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 	Login(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
+	RefreshToken(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 
 	//TODO: admin actions
 
@@ -34,7 +36,14 @@ func NewUserServiceImpl(userRepo repository.UserRepository) *UserServiceImpl {
 func (s *UserServiceImpl) SearchUser(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
 	filter := r.URL.Query().Get("filter")
 
-	respObj, err := s.userRepo.SearchUser(r.Context(), filter)
+	limit := 20
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	respObj, err := s.userRepo.SearchUser(r.Context(), filter, limit)
 	if err != nil {
 		return http.StatusInternalServerError, nil, err
 	}
@@ -89,9 +98,20 @@ func (s *UserServiceImpl) Register(w http.ResponseWriter, r *http.Request) (int,
 		return http.StatusInternalServerError, nil, err
 	}
 
+	token, ttl, err := jwt.GenerateToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		return http.StatusInternalServerError, nil, err
+	}
+
 	responseData := map[string]any{
-		"userID":     user.ID,
-		"created_at": user.CreatedAt,
+		"user": &model.UserDTO{
+			ID:       user.ID,
+			Username: user.Username,
+			Email:    user.Email,
+			Role:     user.Role,
+		},
+		"token": token,
+		"exp":   ttl,
 	}
 	return http.StatusCreated, utils.SuccessResponse(responseData), nil
 
@@ -138,6 +158,11 @@ func (s *UserServiceImpl) Login(w http.ResponseWriter, r *http.Request) (int, *u
 		return http.StatusInternalServerError, nil, err
 	}
 
+	refreshToken, refreshTTL, err := jwt.GenerateRefreshToken(user.ID)
+	if err != nil {
+		return http.StatusInternalServerError, nil, err
+	}
+
 	responseData := map[string]any{
 		"user": &model.UserDTO{
 			ID:       user.ID,
@@ -145,10 +170,63 @@ func (s *UserServiceImpl) Login(w http.ResponseWriter, r *http.Request) (int, *u
 			Email:    user.Email,
 			Role:     user.Role,
 		},
-		"token": token,
-		"exp":   ttl,
+		"token":         token,
+		"exp":           ttl,
+		"refresh_token": refreshToken,
+		"refresh_exp":   refreshTTL,
 	}
 
 	return http.StatusOK, utils.SuccessResponse(responseData), nil
 
+}
+
+func (s *UserServiceImpl) RefreshToken(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(&req); err != nil {
+		return http.StatusBadRequest, nil, errs.ErrValidation
+	}
+
+	if !utils.Required(req.RefreshToken) {
+		return http.StatusBadRequest, nil, errs.ErrValidation
+	}
+
+	claims, err := jwt.ValidateRefreshToken(req.RefreshToken)
+	if err != nil {
+		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	user, err := s.userRepo.GetByID(ctx, claims.UserID)
+	if err != nil || user == nil {
+		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
+	}
+
+	token, ttl, err := jwt.GenerateToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		return http.StatusInternalServerError, nil, err
+	}
+
+	refreshToken, refreshTTL, err := jwt.GenerateRefreshToken(user.ID)
+	if err != nil {
+		return http.StatusInternalServerError, nil, err
+	}
+
+	responseData := map[string]any{
+		"token":         token,
+		"exp":           ttl,
+		"refresh_token": refreshToken,
+		"refresh_exp":   refreshTTL,
+	}
+
+	return http.StatusOK, utils.SuccessResponse(responseData), nil
 }

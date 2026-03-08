@@ -9,9 +9,10 @@ import (
 )
 
 type UserRepository interface {
-	SearchUser(ctx context.Context, filter string) (model.UsersDTO, error)
+	SearchUser(ctx context.Context, filter string, limit int) (model.UsersDTO, error)
 	CreateUser(ctx context.Context, user *model.User) error
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
+	GetByID(ctx context.Context, id string) (*model.User, error)
 }
 
 type UserRepositoryImpl struct {
@@ -58,10 +59,35 @@ func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*mod
 	return &user, nil
 }
 
-func (r *UserRepositoryImpl) SearchUser(ctx context.Context, filter string) (model.UsersDTO, error) {
+func (r *UserRepositoryImpl) GetByID(ctx context.Context, id string) (*model.User, error) {
+
+	var user model.User
+	query := `
+		SELECT id, username, email, password_hash, role
+		FROM users
+		WHERE id = $1
+	`
+
+	err := r.db.QueryRow(ctx, query, id).
+		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *UserRepositoryImpl) SearchUser(ctx context.Context, filter string, limit int) (model.UsersDTO, error) {
+
+	if limit <= 0 {
+		limit = 20
+	}
 
 	var resp model.UsersDTO
-	rows, err := r.db.Query(ctx, "SELECT id, username, email FROM users WHERE username ILIKE $1 OR email ILIKE $1", "%"+filter+"%")
+	rows, err := r.db.Query(ctx, "SELECT id, username, email FROM users WHERE username ILIKE $1 OR email ILIKE $1 LIMIT $2", "%"+filter+"%", limit)
 	if err != nil {
 		return nil, err
 	}
