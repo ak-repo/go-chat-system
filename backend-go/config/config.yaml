@@ -47,3 +47,9 @@ redis:
   port: 6380
   password: ""
   db: 0
+
+# WebSocket (production: tighten limits and set allow_origins under CORS)
+websocket:
+  max_message_size: 65536   # 64KB
+  read_deadline_sec: 60
+  messages_per_sec: 30

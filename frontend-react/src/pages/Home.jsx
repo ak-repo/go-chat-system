@@ -4,7 +4,7 @@ import Chat from "./Chat";
 const Home = () => {
   return (
     <div>
-      <h1>Homeeeeeeeeeeeeeeeeeeee</h1>
+      <h1>Chat</h1>
       <Chat />
     </div>
   );

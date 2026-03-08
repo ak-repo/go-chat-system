@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/ak-repo/go-chat-system/pkg/logger"
 	"github.com/ak-repo/go-chat-system/pkg/utils"
+	"github.com/go-chi/chi/middleware"
+	"go.uber.org/zap"
 )
 
 type WrappedFn func(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
@@ -23,6 +26,13 @@ func HTTPResponseWrapper(fn WrappedFn) http.HandlerFunc {
 		}
 
 		if err != nil {
+			requestID := middleware.GetReqID(r.Context())
+			logger.Logger.Error("handler error",
+				zap.String("request_id", requestID),
+				zap.String("path", r.URL.Path),
+				zap.Int("status", statusCode),
+				zap.Error(err),
+			)
 			utils.ErrorResponse(w, "error occurred", err, statusCode)
 			return
 		}

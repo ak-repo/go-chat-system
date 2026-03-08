@@ -13,7 +13,7 @@ import (
 type FriendRequestRepository interface {
 	CreateRequest(ctx context.Context, req *model.FriendRequest) error
 	GetPendingRequest(ctx context.Context, sender, receiver string) (*model.FriendRequest, error)
-	GetAllRequests(ctx context.Context, userID string) (model.FriendRequestsDTO, error)
+	GetAllRequests(ctx context.Context, userID string, limit, offset int) (model.FriendRequestsDTO, error)
 
 	AcceptRequest(ctx context.Context, requestID, receiverID string) error
 	RejectRequest(ctx context.Context, requestID, receiverID string) error
@@ -151,22 +151,29 @@ func (r *FriendRequestRepositoryImpl) AcceptRequest(ctx context.Context, request
 	return tx.Commit(ctx)
 }
 
-func (r *FriendRequestRepositoryImpl) GetAllRequests(ctx context.Context, userID string) (model.FriendRequestsDTO, error) {
+func (r *FriendRequestRepositoryImpl) GetAllRequests(ctx context.Context, userID string, limit, offset int) (model.FriendRequestsDTO, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	query := `
 		SELECT fr.id,
 			   fr.sender_id,
 			   fr.receiver_id,
 			   fr.status,
-			   u.name,
+			   u.username,
 			   u.email,
 			   fr.created_at
 		FROM friend_requests fr
 		JOIN users u ON u.id = fr.sender_id
 		WHERE fr.receiver_id=$1
 		ORDER BY fr.created_at DESC
+		LIMIT $2 OFFSET $3
 	`
 
-	rows, err := r.db.Query(ctx, query, userID)
+	rows, err := r.db.Query(ctx, query, userID, limit, offset)
 	if err != nil {
 		return nil, err
 	}

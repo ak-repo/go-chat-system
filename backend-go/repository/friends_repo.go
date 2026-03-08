@@ -10,7 +10,7 @@ import (
 type FriendRepository interface {
 	CreateFriendship(ctx context.Context, a, b string) error
 	AreFriends(ctx context.Context, a, b string) (bool, error)
-	ListFriends(ctx context.Context, userID string) (model.FriendsDTO, error)
+	ListFriends(ctx context.Context, userID string, limit, offset int) (model.FriendsDTO, error)
 }
 
 type FriendRepositoryImpl struct {
@@ -44,18 +44,25 @@ func (r *FriendRepositoryImpl) AreFriends(ctx context.Context, a, b string) (boo
 	return exists, err
 }
 
-func (r *FriendRepositoryImpl) ListFriends(ctx context.Context, userID string) (model.FriendsDTO, error) {
+func (r *FriendRepositoryImpl) ListFriends(ctx context.Context, userID string, limit, offset int) (model.FriendsDTO, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
 	rows, err := r.db.Query(ctx, `
 		SELECT f.user_id,
 			   f.friend_id,
-			   u.name,
+			   u.username,
 			   u.email,
 			   f.created_at
 		FROM friends f
 		JOIN users u ON u.id = f.friend_id
 		WHERE f.user_id=$1
 		ORDER BY f.created_at DESC
-	`, userID)
+		LIMIT $2 OFFSET $3
+	`, userID, limit, offset)
 	if err != nil {
 		return nil, err
 	}

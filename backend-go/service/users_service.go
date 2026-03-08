@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ak-repo/go-chat-system/model"
@@ -33,14 +34,27 @@ func NewUserServiceImpl(userRepo repository.UserRepository) *UserServiceImpl {
 
 func (s *UserServiceImpl) SearchUser(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
 	filter := r.URL.Query().Get("filter")
+	limit, offset := 20, 0
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if n, err := strconv.Atoi(o); err == nil && n >= 0 {
+			offset = n
+		}
+	}
 
-	respObj, err := s.userRepo.SearchUser(r.Context(), filter)
+	respObj, err := s.userRepo.SearchUser(r.Context(), filter, limit, offset)
 	if err != nil {
 		return http.StatusInternalServerError, nil, err
 	}
 
 	responseData := map[string]any{
 		"users": respObj,
+		"limit": limit,
+		"offset": offset,
 	}
 	return http.StatusOK, utils.SuccessResponse(responseData), nil
 }
@@ -89,12 +103,22 @@ func (s *UserServiceImpl) Register(w http.ResponseWriter, r *http.Request) (int,
 		return http.StatusInternalServerError, nil, err
 	}
 
+	token, ttl, err := jwt.GenerateToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		return http.StatusInternalServerError, nil, err
+	}
+
 	responseData := map[string]any{
-		"userID":     user.ID,
-		"created_at": user.CreatedAt,
+		"user": &model.UserDTO{
+			ID:       user.ID,
+			Username: user.Username,
+			Email:    user.Email,
+			Role:     user.Role,
+		},
+		"token": token,
+		"exp":   ttl,
 	}
 	return http.StatusCreated, utils.SuccessResponse(responseData), nil
-
 }
 
 func (s *UserServiceImpl) Login(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {

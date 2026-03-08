@@ -9,6 +9,24 @@ const api = axios.create({
   },
 });
 
+// Token for authenticated requests (set by AuthContext on login/load, cleared on logout)
+let authToken = null;
+
+export function setAuthToken(token) {
+  authToken = token;
+}
+
+export function getAuthToken() {
+  return authToken;
+}
+
+api.interceptors.request.use((config) => {
+  if (authToken) {
+    config.headers.Authorization = `Bearer ${authToken}`;
+  }
+  return config;
+});
+
 /**
  * ----------------------------------------------------
  * GENERIC API HELPERS

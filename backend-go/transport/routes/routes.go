@@ -7,7 +7,6 @@ import (
 	"github.com/ak-repo/go-chat-system/database"
 	"github.com/ak-repo/go-chat-system/transport/injector"
 	mdware "github.com/ak-repo/go-chat-system/transport/middleware"
-	"github.com/ak-repo/go-chat-system/transport/websocket"
 	"github.com/ak-repo/go-chat-system/transport/wrapper"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
@@ -16,8 +15,11 @@ import (
 func Router() chi.Router {
 	r := chi.NewRouter()
 
-	// global middleware
-	r.Use(middleware.Logger)
+	// global middleware: request ID first so it's available for logging and errors
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(mdware.Logger())
+	r.Use(mdware.Recover())
 	r.Use(mdware.CORS())
 
 	// injector -> contains all services and repository
@@ -59,19 +61,46 @@ func Router() chi.Router {
 				b.Post("/unblock", wrapper.HTTPResponseWrapper(app.BlockService.UnblockUser))
 			})
 
-			// Websocket
-			hub := websocket.NewHub()
-			go hub.Run()
+			// Chats and messages
+			pr.Route("/chats", func(cr chi.Router) {
+				cr.Get("/", wrapper.HTTPResponseWrapper(app.ChatService.ListMyChats))
+				cr.Post("/", wrapper.HTTPResponseWrapper(app.ChatService.GetOrCreateDM))
+				cr.Get("/{chatID}/messages", wrapper.HTTPResponseWrapper(app.MessageService.ListMessages))
+			})
 
-			wsHandler := wrapper.NewWebsocketHandler(hub)
+			// Websocket
+			wsHandler := wrapper.NewWebsocketHandler(app.Hub)
 			pr.Get("/ws", wsHandler.Handler)
 		})
 	})
 
-	// ---------------- Health checks ----------------
+	// ---------------- Health checks (for orchestrator: use /live and /ready) ----------------
+	// Liveness: process is running (no dependencies)
+	r.Get("/live", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	// Readiness: app can serve traffic (DB + Redis up)
+	r.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
+		if err := database.GetDB().Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("db not ready"))
+			return
+		}
+		if err := database.RedisClient.Ping(r.Context()).Err(); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("redis not ready"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
 	r.Get("/redis-health", func(w http.ResponseWriter, r *http.Request) {
 		if err := database.RedisClient.Ping(r.Context()).Err(); err != nil {
-			http.Error(w, "redis down: "+err.Error(), http.StatusServiceUnavailable)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("redis down"))
 			return
 		}
 		w.Write([]byte("ok"))
@@ -79,7 +108,8 @@ func Router() chi.Router {
 
 	r.Get("/db-health", func(w http.ResponseWriter, r *http.Request) {
 		if err := database.GetDB().Ping(r.Context()); err != nil {
-			http.Error(w, "db down: "+err.Error(), http.StatusServiceUnavailable)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("db down"))
 			return
 		}
 		w.Write([]byte("ok"))

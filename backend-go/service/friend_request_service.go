@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ak-repo/go-chat-system/model"
@@ -175,17 +176,30 @@ func (s *FriendRequestServiceImpl) GetAllRequests(w http.ResponseWriter, r *http
 		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
 	}
 
-	data, err := s.repo.GetAllRequests(r.Context(), userID)
+	limit, offset := 20, 0
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if n, err := strconv.Atoi(o); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	data, err := s.repo.GetAllRequests(r.Context(), userID, limit, offset)
 	if err != nil {
 		return http.StatusInternalServerError, nil, errs.ErrDatabase
 	}
 
 	respData := map[string]any{
 		"requests": data,
+		"limit":    limit,
+		"offset":   offset,
 	}
 
 	return http.StatusOK, utils.SuccessResponse(respData), nil
-
 }
 
 func (s *FriendRequestServiceImpl) RejectRequest(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {

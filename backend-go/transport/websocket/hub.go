@@ -1,6 +1,12 @@
 package websocket
 
-import "log"
+import (
+	"encoding/json"
+	"log"
+)
+
+// PersistDMFunc persists a DM message and returns the message to broadcast (with id, chat_id, etc.). If nil, hub does not persist.
+type PersistDMFunc func(senderID, receiverID, content string) (*WSMessage, error)
 
 type Hub struct {
 	clients    map[string]map[*Client]bool
@@ -8,6 +14,7 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	incoming   chan *WSMessage
+	PersistDM  PersistDMFunc
 }
 
 func NewHub() *Hub {
@@ -53,26 +60,54 @@ func (h *Hub) Register(client *Client) {
 
 func (h *Hub) routeMessage(msg *WSMessage) {
 	switch msg.ReceiverType {
-
 	case ReceiverUser:
+		if h.PersistDM != nil {
+			content := extractContent(msg.Data)
+			if content != "" {
+				persisted, err := h.PersistDM(msg.SenderID, msg.ReceiverID, content)
+				if err == nil && persisted != nil {
+					h.sendToUserID(persisted, msg.SenderID)
+					h.sendToUserID(persisted, msg.ReceiverID)
+					return
+				}
+			}
+		}
 		h.sendToUser(msg)
-
 	case ReceiverGroup:
 		h.sendToGroup(msg)
 	}
 }
 
 func (h *Hub) sendToUser(msg *WSMessage) {
-	conns, ok := h.clients[msg.ReceiverID]
+	h.sendToUserID(msg, msg.ReceiverID)
+}
+
+func extractContent(data json.RawMessage) string {
+	if len(data) == 0 {
+		return ""
+	}
+	var v struct {
+		Text    string `json:"text"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		return ""
+	}
+	if v.Content != "" {
+		return v.Content
+	}
+	return v.Text
+}
+
+func (h *Hub) sendToUserID(msg *WSMessage, userID string) {
+	conns, ok := h.clients[userID]
 	if !ok {
 		return
 	}
-
 	for c := range conns {
 		select {
 		case c.send <- msg:
 		default:
-			// Drop slow client
 			close(c.send)
 			delete(conns, c)
 		}

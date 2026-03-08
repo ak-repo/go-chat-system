@@ -1,18 +1,12 @@
 package model
 
-import (
-	"database/sql"
-	"time"
-)
+import "time"
 
-// DAO
+// Message is a persisted chat message.
 type Message struct {
-	ID         string       `json:"id"`
-	SenderID   string       `json:"sender_id"`
-	ReceiverID string       `json:"receiver_id"`
-	Body       string       `json:"content"`
-	IsGroup    bool         `josn:"is_group"`
-	CreatedAt  time.Time    `json:"created_at"`
-	ModifiedAt time.Time    `json:"modified_at,omitempty" db:"modified_at" `
-	DeletedAt  sql.NullTime `json:"deleted_at,omitempty" db:"deleted_at" `
+	ID        string    `db:"id" json:"id"`
+	ChatID    string    `db:"chat_id" json:"chat_id"`
+	SenderID  string    `db:"sender_id" json:"sender_id"`
+	Content   string    `db:"content" json:"content"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }

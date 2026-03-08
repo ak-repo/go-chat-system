@@ -20,17 +20,18 @@ func SuccessResponse[T any](data T) *APIResponse {
 	}
 }
 
+// ErrorResponse writes a JSON error. Never exposes err.Error() to the client to avoid leaking internal details.
+// Use message (and optional clientSafeCode) for client-facing feedback; log err server-side.
 func ErrorResponse(w http.ResponseWriter, message string, err error, statusCode int) {
-
 	response := APIResponse{
 		Status:  "error",
 		Message: message,
 	}
-	if err != nil {
-		response.Error = err.Error()
+	// Do not send raw err to client (security and contract stability)
+	if statusCode >= 500 {
+		response.Message = "internal error"
 	}
 
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(&response)
-
+	_ = json.NewEncoder(w).Encode(&response)
 }
