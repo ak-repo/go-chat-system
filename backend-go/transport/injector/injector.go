@@ -11,12 +11,18 @@ import (
 type Container struct {
 
 	// Repositories
-	FriendRepo repository.FriendRepository
-	UserRepo   repository.UserRepository
+	UserRepo          repository.UserRepository
+	FriendRepo        repository.FriendRepository
+	FriendRequestRepo repository.FriendRequestRepository
+	BlockRepo         repository.BlockRepository
+	MessageRepo       repository.MessageRepository
 
 	// Service
-	FriendService service.FriendService
-	UserService   service.UserService
+	UserService          service.UserService
+	FriendService        service.FriendService
+	FriendRequestService service.FriendRequestService
+	BlockService         service.BlockService
+	MessageService       service.MessageService
 }
 
 // Init creates and wires dependencies.
@@ -28,15 +34,27 @@ func Init() *Container {
 	// 1) Create repositories (DB layer)
 	friendRepo := repository.NewFriendRepositoryImpl(db)
 	userRepo := repository.NewUserRepositoryImpl(db)
+	blockRepo := repository.BlockRepositoryInit(db)
+	friendReqRepo := repository.FriendRequestRepositoryInit(db)
+	messageRepo := repository.NewMessageRepositoryImpl(db)
 
 	// 2) Create services (business layer)
 	friendService := service.NewFriendServiceImpl(friendRepo)
 	userService := service.NewUserServiceImpl(userRepo)
+	blockService := service.BlockServiceInit(blockRepo)
+	friendReqService := service.FriendRequestServiceInit(friendReqRepo, friendRepo, blockRepo)
+	messageService := service.NewMessageServiceImpl(messageRepo)
 
 	return &Container{
-		FriendRepo:    friendRepo,
-		FriendService: friendService,
-		UserRepo:      userRepo,
-		UserService:   userService,
+		FriendRepo:           friendRepo,
+		FriendService:        friendService,
+		UserRepo:             userRepo,
+		UserService:          userService,
+		FriendRequestRepo:    friendReqRepo,
+		FriendRequestService: friendReqService,
+		BlockRepo:            blockRepo,
+		BlockService:         blockService,
+		MessageRepo:          messageRepo,
+		MessageService:       messageService,
 	}
 }

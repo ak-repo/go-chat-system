@@ -3,8 +3,7 @@ import Chat from "./Chat";
 
 const Home = () => {
   return (
-    <div>
-      <h1>Homeeeeeeeeeeeeeeeeeeee</h1>
+    <div style={{ height: "100vh" }}>
       <Chat />
     </div>
   );

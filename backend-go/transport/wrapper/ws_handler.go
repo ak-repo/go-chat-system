@@ -1,20 +1,40 @@
-package handler
+package wrapper
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
+	"github.com/ak-repo/go-chat-system/config"
 	"github.com/ak-repo/go-chat-system/transport/middleware"
 	ws "github.com/ak-repo/go-chat-system/transport/websocket"
 
 	"github.com/gorilla/websocket"
 )
 
+func isWSOriginAllowed(origin string) bool {
+	allowedOrigins := config.Config.CORS.AllowedOrigins
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = []string{fmt.Sprintf("%s:%d", config.Config.CORS.Host, config.Config.CORS.Port)}
+	}
+
+	for _, allowed := range allowedOrigins {
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // tighten for production
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // same-origin requests
+		}
+		return isWSOriginAllowed(origin)
 	},
 }
 

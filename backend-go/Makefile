@@ -13,18 +13,18 @@ help: ## Show available commands
 CONFIG_FILE := ./config/config.yaml
 
 ifneq ("$(wildcard $(CONFIG_FILE))","")
-DB_HOST       := $(shell yq e '.database.host' $(CONFIG_FILE))
-DB_PORT       := $(shell yq e '.database.port' $(CONFIG_FILE))
-DB_USER       := $(shell yq e '.database.user' $(CONFIG_FILE))
-DB_PASSWORD   := $(shell yq e '.database.password' $(CONFIG_FILE))
-DB_NAME       := $(shell yq e '.database.name' $(CONFIG_FILE))
-DB_SSLMODE    := $(shell yq e '.database.sslmode' $(CONFIG_FILE))
+DB_HOST       := $(shell cat $(CONFIG_FILE) | yq -r '.database.host')
+DB_PORT       := $(shell cat $(CONFIG_FILE) | yq -r '.database.port')
+DB_USER       := $(shell cat $(CONFIG_FILE) | yq -r '.database.user')
+DB_PASSWORD   := $(shell cat $(CONFIG_FILE) | yq -r '.database.password')
+DB_NAME       := $(shell cat $(CONFIG_FILE) | yq -r '.database.name')
+DB_SSLMODE    := $(shell cat $(CONFIG_FILE) | yq -r '.database.sslmode')
 
-REDIS_HOST    := $(shell yq e '.redis.host' $(CONFIG_FILE))
-REDIS_PORT    := $(shell yq e '.redis.port' $(CONFIG_FILE))
-REDIS_PASS    := $(shell yq e '.redis.password' $(CONFIG_FILE))
+REDIS_HOST    := $(shell cat $(CONFIG_FILE) | yq -r '.redis.host')
+REDIS_PORT    := $(shell cat $(CONFIG_FILE) | yq -r '.redis.port')
+REDIS_PASS    := $(shell cat $(CONFIG_FILE) | yq -r '.redis.password')
 
-APP_PORT      := $(shell yq e '.server.port' $(CONFIG_FILE))
+APP_PORT      := $(shell cat $(CONFIG_FILE) | yq -r '.server.port')
 endif
 
 DB_DSN := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)

@@ -1,5 +1,11 @@
 import axios from "axios";
 
+const TOKEN_KEY = "token";
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY);
+export const setToken = (token) => localStorage.setItem(TOKEN_KEY, token);
+export const removeToken = () => localStorage.removeItem(TOKEN_KEY);
+
 // Axios Instance
 const api = axios.create({
   baseURL: "http://localhost:8002/api/v1",
@@ -7,6 +13,14 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+});
+
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 /**

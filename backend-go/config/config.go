@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/spf13/viper"
@@ -21,8 +22,9 @@ type Server struct {
 }
 
 type CORS struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"port"`
+	Host           string   `mapstructure:"host"`
+	Port           int      `mapstructure:"port"`
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
 }
 
 // DATABASE
@@ -46,9 +48,10 @@ type DBPoolConfig struct {
 
 // JWT
 type JWTConfig struct {
-	Secret string        `mapstructure:"secret"`
-	Expiry time.Duration `mapstructure:"expiry"`
-	Issuer string        `mapstructure:"issuer"`
+	Secret        string        `mapstructure:"secret"`
+	Expiry        time.Duration `mapstructure:"expiry"`
+	Issuer        string        `mapstructure:"issuer"`
+	RefreshExpiry time.Duration `mapstructure:"refresh_expiry"`
 }
 
 // Redis
@@ -75,13 +78,69 @@ func Load() error {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("./config")
 
+	viper.SetEnvPrefix("APP")
+	viper.AutomaticEnv()
+
+	viper.RegisterAlias("database.host", "DB_HOST")
+	viper.RegisterAlias("database.port", "DB_PORT")
+	viper.RegisterAlias("database.user", "DB_USER")
+	viper.RegisterAlias("database.password", "DB_PASSWORD")
+	viper.RegisterAlias("database.name", "DB_NAME")
+	viper.RegisterAlias("database.sslmode", "DB_SSLMODE")
+
+	viper.RegisterAlias("redis.host", "REDIS_HOST")
+	viper.RegisterAlias("redis.port", "REDIS_PORT")
+	viper.RegisterAlias("redis.password", "REDIS_PASSWORD")
+	viper.RegisterAlias("redis.db", "REDIS_DB")
+
+	viper.RegisterAlias("jwt.secret", "JWT_SECRET")
+	viper.RegisterAlias("jwt.expiry", "JWT_EXPIRY")
+
+	viper.RegisterAlias("server.port", "PORT")
+	viper.RegisterAlias("server.host", "HOST")
+
+	viper.RegisterAlias("logging.level", "LOG_LEVEL")
+	viper.RegisterAlias("logging.format", "LOG_FORMAT")
+
 	if err := viper.ReadInConfig(); err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
+
+	overrideFromEnv()
 
 	if err := viper.Unmarshal(&Config); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	return nil
+}
+
+func overrideFromEnv() {
+	if v := os.Getenv("DB_HOST"); v != "" {
+		viper.Set("database.host", v)
+	}
+	if v := os.Getenv("DB_PORT"); v != "" {
+		viper.Set("database.port", v)
+	}
+	if v := os.Getenv("DB_USER"); v != "" {
+		viper.Set("database.user", v)
+	}
+	if v := os.Getenv("DB_PASSWORD"); v != "" {
+		viper.Set("database.password", v)
+	}
+	if v := os.Getenv("DB_NAME"); v != "" {
+		viper.Set("database.name", v)
+	}
+	if v := os.Getenv("REDIS_HOST"); v != "" {
+		viper.Set("redis.host", v)
+	}
+	if v := os.Getenv("REDIS_PORT"); v != "" {
+		viper.Set("redis.port", v)
+	}
+	if v := os.Getenv("JWT_SECRET"); v != "" {
+		viper.Set("jwt.secret", v)
+	}
+	if v := os.Getenv("PORT"); v != "" {
+		viper.Set("server.port", v)
+	}
 }

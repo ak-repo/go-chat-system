@@ -15,6 +15,11 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+type RefreshClaims struct {
+	UserID string `json:"user_id"`
+	jwt.RegisteredClaims
+}
+
 // GenerateAccessToken creates a new JWT access token
 func GenerateToken(userID, email, role string) (string, time.Time, error) {
 	expirationTime := time.Now().Add(config.Config.JWT.Expiry)
@@ -22,6 +27,31 @@ func GenerateToken(userID, email, role string) (string, time.Time, error) {
 		UserID: userID,
 		Email:  email,
 		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(config.Config.JWT.Secret))
+	if err != nil {
+		return "", time.Time{}, err
+	}
+
+	return tokenString, expirationTime, nil
+}
+
+// GenerateRefreshToken creates a new JWT refresh token
+func GenerateRefreshToken(userID string) (string, time.Time, error) {
+	refreshExpiry := config.Config.JWT.RefreshExpiry
+	if refreshExpiry <= 0 {
+		refreshExpiry = 7 * 24 * time.Hour // default 7 days
+	}
+	expirationTime := time.Now().Add(refreshExpiry)
+
+	claims := &RefreshClaims{
+		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -47,12 +77,31 @@ func ValidateToken(tokenString string) (*Claims, error) {
 	})
 
 	if err != nil {
-		return nil, err // keep raw error during debugging
+		return nil, err
 	}
 
 	if !token.Valid {
-
 		return nil, fmt.Errorf("token invalid")
+	}
+
+	return claims, nil
+}
+
+func ValidateRefreshToken(tokenString string) (*RefreshClaims, error) {
+	claims := &RefreshClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(config.Config.JWT.Secret), nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !token.Valid {
+		return nil, fmt.Errorf("refresh token invalid")
 	}
 
 	return claims, nil

@@ -24,7 +24,6 @@ jwt:
   secret: super-secret
   expiry: 24h
   issuer: system
-  refresh_expiry: 168h  # 7 days
 
 # Service Ports
 server:
@@ -35,9 +34,6 @@ server:
 CORS:
   port: 3000
   host: http://localhost
-  allowed_origins:
-    - "http://localhost:3000"
-    - "http://localhost:5173"
 
 # Logging Configuration
 logging:

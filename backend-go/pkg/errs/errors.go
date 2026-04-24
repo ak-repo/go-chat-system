@@ -9,10 +9,12 @@ import (
 var (
 	ErrInternal     = errors.New("internal error")
 	ErrNotFound     = errors.New("resource not found")
+	ErrBadRequest   = errors.New("invalid inputes")
 	ErrForbidden    = errors.New("forbidden")
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrConflict     = errors.New("conflict")
 	ErrValidation   = errors.New("validation failed")
+	ErrDatabase     = errors.New("database error")
 )
 
 // Friend module errors
