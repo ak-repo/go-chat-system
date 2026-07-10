@@ -1,0 +1,9 @@
+
+# system configurations
+./config/config.yaml
+
+
+
+# agents
+/.agents/
+

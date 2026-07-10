@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ak-repo/go-chat-system/config"
-	"github.com/ak-repo/go-chat-system/database"
-	"github.com/ak-repo/go-chat-system/transport/routes"
+	"github.com/ak-repo/go-chat-system/internal/platform/config"
+	"github.com/ak-repo/go-chat-system/internal/platform/database"
+	"github.com/ak-repo/go-chat-system/internal/transport/routes"
 
-	"github.com/ak-repo/go-chat-system/pkg/logger"
+	"github.com/ak-repo/go-chat-system/internal/shared/logger"
 
 	"go.uber.org/zap"
 )
@@ -29,8 +29,12 @@ func main() {
 	}
 
 	//database
-	database.ConnectDB()
-	database.InitRedis()
+	if err := database.ConnectDB(); err != nil {
+		log.Fatal("failed to connect to database:", err)
+	}
+	if err := database.InitRedis(); err != nil {
+		log.Fatal("failed to connect to Redis:", err)
+	}
 
 	router := routes.Router()
 
@@ -52,10 +56,16 @@ func main() {
 	}()
 
 	// Graceful shutdown
-	quite := make(chan os.Signal, 1)
-	signal.Notify(quite, syscall.SIGINT, syscall.SIGTERM)
-	<-quite
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 	log.Println("Shutting down system....")
+
+	// Stop WebSocket hub first
+	if routes.GlobalHub != nil {
+		routes.GlobalHub.Stop()
+		log.Println("WebSocket hub stopped")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -29,15 +29,16 @@ jwt:
 # Service Ports
 server:
   port: 8002
-  host: http://localhost
+  host: localhost
 
 # Frontend Ports : "http://localhost:3000"
 CORS:
   port: 3000
-  host: http://localhost
+  host: localhost
   allowed_origins:
     - "http://localhost:3000"
     - "http://localhost:5173"
+    - "http://localhost:5174"
 
 # Logging Configuration
 logging:
