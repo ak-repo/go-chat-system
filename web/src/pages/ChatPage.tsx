@@ -25,7 +25,7 @@ export default function ChatPage() {
     try {
       const response = await getMessages(userId, 50, 0);
       if (response.success && response.data) {
-        setMessages(response.data.messages);
+        setMessages(response.data.messages ?? []);
       }
     } catch {
       setError('Failed to load messages');
@@ -51,12 +51,15 @@ export default function ChatPage() {
         id: msg.message_id,
         sender_id: userId || '',
         receiver_id: user?.id || '',
-        body: msg.content,
+        content: msg.content,
         is_group: false,
         created_at: msg.timestamp,
         modified_at: msg.timestamp,
       };
-      setMessages((prev) => [...prev, newMsg]);
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.message_id)) return prev;
+        return [...prev, newMsg];
+      });
     });
 
     const unsubscribeTyping = onTyping((data) => {
@@ -79,6 +82,19 @@ export default function ChatPage() {
     e.preventDefault();
     if (!inputMessage.trim() || !userId) return;
 
+    const body = inputMessage.trim();
+    const now = new Date().toISOString();
+    const pendingMessage: Message = {
+      id: crypto.randomUUID(),
+      sender_id: user?.id || '',
+      receiver_id: userId,
+      content: body,
+      is_group: false,
+      created_at: now,
+      modified_at: now,
+    };
+
+    setMessages((prev) => [...prev, pendingMessage]);
     sendMessage(userId, inputMessage.trim());
     setInputMessage('');
 
@@ -124,9 +140,9 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-black-50 flex flex-col">
       {/* Header */}
-      <header className="bg-white shadow">
+      <header className="bg-black shadow">
         <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-4">
             <Link
@@ -183,7 +199,7 @@ export default function ChatPage() {
                         : 'bg-gray-200 text-gray-800'
                     }`}
                   >
-                    <div>{msg.body}</div>
+                    <div>{msg.content}</div>
                     <div
                       className={`text-xs mt-1 ${
                         isOwn ? 'text-purple-200' : 'text-gray-500'

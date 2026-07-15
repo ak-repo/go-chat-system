@@ -1,6 +1,10 @@
-import { getToken } from './client';
+import { BASE_URL, getToken } from './client';
 
-const WS_URL = 'ws://localhost:8002/api/v1/ws';
+function getWSUrl(): string {
+  const url = new URL(`${BASE_URL}/ws`);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
 
 // WebSocket message types
 export type WSEventType = 'message' | 'typing' | 'read' | 'ack' | 'error';
@@ -42,26 +46,33 @@ class WSClient {
   private messageHandlers: Map<WSEventType, Set<(data: unknown) => void>> = new Map();
   private isConnected = false;
   private shouldReconnect = true;
+  private onStateChange: ((connected: boolean) => void) | null = null;
 
   // Connect to WebSocket
   connect(token?: string): void {
+    this.shouldReconnect = true;
+
     const authToken = token || getToken();
     if (!authToken) {
       console.error('No auth token available for WebSocket connection');
       return;
     }
 
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      return;
+    // Close existing connection before creating a new one
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
     }
 
-    const url = `${WS_URL}?token=${authToken}`;
+    const url = `${getWSUrl()}?token=${authToken}`;
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
       console.log('WebSocket connected');
       this.isConnected = true;
       this.reconnectAttempts = 0;
+      this.onStateChange?.(true);
     };
 
     this.ws.onmessage = (event) => {
@@ -79,6 +90,7 @@ class WSClient {
     this.ws.onclose = () => {
       console.log('WebSocket disconnected');
       this.isConnected = false;
+      this.onStateChange?.(false);
       if (this.shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
         this.scheduleReconnect(authToken);
       }
@@ -86,6 +98,7 @@ class WSClient {
 
     this.ws.onerror = (error) => {
       console.error('WebSocket error:', error);
+      this.onStateChange?.(false);
     };
   }
 
@@ -105,6 +118,12 @@ class WSClient {
       this.ws = null;
     }
     this.isConnected = false;
+    this.onStateChange?.(false);
+  }
+
+  // Set callback for connection state changes
+  setOnStateChange(callback: (connected: boolean) => void): void {
+    this.onStateChange = callback;
   }
 
   // Send message
@@ -117,6 +136,7 @@ class WSClient {
     const message: WSMessage = {
       event,
       receiver_id: receiverId,
+      receiver_type: 'user',
       data,
     };
 

@@ -10,6 +10,7 @@ import (
 	"github.com/ak-repo/go-chat-system/internal/repository"
 	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
+	"github.com/ak-repo/go-chat-system/internal/transport/middleware"
 	"github.com/google/uuid"
 )
 
@@ -60,7 +61,7 @@ func (s *MessageServiceImpl) GetMessages(w http.ResponseWriter, r *http.Request)
 		return http.StatusBadRequest, nil, nil
 	}
 
-	userIDVal := r.Context().Value("userID")
+	userIDVal := r.Context().Value(middleware.UserIDKey)
 	userID, ok := userIDVal.(string)
 	if !ok || userID == "" {
 		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
@@ -83,6 +84,9 @@ func (s *MessageServiceImpl) GetMessages(w http.ResponseWriter, r *http.Request)
 	messages, err := s.GetConversation(r.Context(), userID, otherUserID, limit, offset)
 	if err != nil {
 		return http.StatusInternalServerError, nil, err
+	}
+	if messages == nil {
+		messages = model.Messages{}
 	}
 
 	responseData := map[string]any{

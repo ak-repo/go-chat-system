@@ -1,6 +1,5 @@
 import apiClient, { toApiResponse } from './client';
 import type { ApiResponse } from './client';
-import type { User } from './auth';
 
 // Friend list response
 export interface FriendsResponse {
@@ -10,23 +9,24 @@ export interface FriendsResponse {
 }
 
 export interface Friend {
-  id: string;
-  user_id: string;
-  friend_id: string;
+  UserID: string;
+  FriendID: string;
+  FriendName: string;
+  FriendEmail: string;
   created_at: string;
-  friend?: User;
 }
 
 // Friend request types
+// Backend returns PascalCase fields (ID, SenderID, etc.)
 export interface FriendRequest {
-  id: string;
-  sender_id: string;
-  receiver_id: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'cancelled';
+  ID: string;
+  SenderID: string;
+  ReceiverID: string;
+  FriendName: string;
+  FriendEmail: string;
+  Status: string;
   created_at: string;
-  modified_at: string;
-  sender?: User;
-  receiver?: User;
+  modified_at?: string;
 }
 
 export interface FriendRequestsResponse {

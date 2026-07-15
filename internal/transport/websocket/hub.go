@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"time"
 
@@ -117,15 +118,13 @@ func (h *Hub) routeMessage(msg *WSMessage) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			var payload struct {
-				Text string `json:"text"`
-			}
-			if err := json.Unmarshal(msg.Data, &payload); err != nil {
+			text, err := extractMessageText(msg.Data)
+			if err != nil {
 				log.Printf("failed to parse message data: %v", err)
 				return
 			}
 
-			_, err := h.messageService.CreateMessage(ctx, msg.SenderID, msg.ReceiverID, payload.Text, false)
+			_, err = h.messageService.CreateMessage(ctx, msg.SenderID, msg.ReceiverID, text, false)
 			if err != nil {
 				log.Printf("failed to persist message: %v", err)
 			}
@@ -138,6 +137,23 @@ func (h *Hub) routeMessage(msg *WSMessage) {
 	case ReceiverGroup:
 		h.sendToGroup(msg)
 	}
+}
+
+func extractMessageText(data json.RawMessage) (string, error) {
+	var payload struct {
+		Text    string `json:"text"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return "", err
+	}
+	if payload.Text != "" {
+		return payload.Text, nil
+	}
+	if payload.Content != "" {
+		return payload.Content, nil
+	}
+	return "", errors.New("message text missing")
 }
 
 func (h *Hub) sendToUser(msg *WSMessage) {

@@ -1,6 +1,6 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-const BASE_URL = 'http://localhost:8002/api/v1';
+export const BASE_URL = 'http://localhost:8002/api/v1';
 
 // Token storage keys
 const TOKEN_KEY = 'auth_token';

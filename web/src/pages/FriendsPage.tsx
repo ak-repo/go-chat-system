@@ -38,10 +38,13 @@ export default function FriendsPage() {
       ]);
 
       if (friendsRes.success && friendsRes.data) {
-        setFriends(friendsRes.data.friends);
+        setFriends(friendsRes.data.friends ?? []);
       }
       if (requestsRes.success && requestsRes.data) {
-        setRequests(requestsRes.data.requests);
+        setRequests(requestsRes.data.requests ?? []);
+      }
+      if (friendsRes.error) {
+        setError('Failed to load data');
       }
     } catch {
       setError('Failed to load data');
@@ -88,7 +91,7 @@ export default function FriendsPage() {
 
   const handleAcceptRequest = async (request: FriendRequest) => {
     try {
-      await acceptFriendRequest(request.id, request.sender_id);
+      await acceptFriendRequest(request.ID, request.ReceiverID);
       loadData();
     } catch {
       alert('Failed to accept request');
@@ -97,7 +100,7 @@ export default function FriendsPage() {
 
   const handleRejectRequest = async (request: FriendRequest) => {
     try {
-      await rejectFriendRequest(request.id, request.sender_id);
+      await rejectFriendRequest(request.ID, request.ReceiverID);
       loadData();
     } catch {
       alert('Failed to reject request');
@@ -160,7 +163,7 @@ export default function FriendsPage() {
                 : 'bg-gray-200 text-gray-700'
             }`}
           >
-            Requests ({requests.filter((r) => r.status === 'pending').length})
+            Requests ({requests.filter((r) => r.Status === 'pending').length})
           </button>
           <button
             onClick={() => setActiveTab('search')}
@@ -191,17 +194,17 @@ export default function FriendsPage() {
               <ul className="divide-y">
                 {friends.map((friend) => (
                   <li
-                    key={friend.id}
+                    key={friend.FriendID}
                     className="p-4 flex items-center justify-between"
                   >
                     <div>
-                      <div className="font-medium">{friend.friend?.username}</div>
+                      <div className="font-medium">{friend.FriendName}</div>
                       <div className="text-sm text-gray-500">
-                        {friend.friend?.email}
+                        {friend.FriendEmail}
                       </div>
                     </div>
                     <button
-                      onClick={() => handleChat(friend.friend_id)}
+                      onClick={() => handleChat(friend.FriendID)}
                       className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
                     >
                       Chat
@@ -223,18 +226,18 @@ export default function FriendsPage() {
             ) : (
               <ul className="divide-y">
                 {requests
-                  .filter((r) => r.status === 'pending')
+                  .filter((r) => r.Status === 'pending')
                   .map((request) => (
                     <li
-                      key={request.id}
+                      key={request.ID}
                       className="p-4 flex items-center justify-between"
                     >
                       <div>
                         <div className="font-medium">
-                          {request.sender?.username || request.sender_id}
+                          {request.FriendName}
                         </div>
                         <div className="text-sm text-gray-500">
-                          Wants to be your friend
+                          {request.FriendEmail}
                         </div>
                       </div>
                       <div className="flex gap-2">

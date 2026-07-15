@@ -157,7 +157,7 @@ func (r *FriendRequestRepositoryImpl) GetAllRequests(ctx context.Context, userID
 			   fr.sender_id,
 			   fr.receiver_id,
 			   fr.status,
-			   u.name,
+			   u.username,
 			   u.email,
 			   fr.created_at
 		FROM friend_requests fr

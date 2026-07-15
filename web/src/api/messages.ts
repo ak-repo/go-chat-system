@@ -6,11 +6,11 @@ export interface Message {
   id: string;
   sender_id: string;
   receiver_id: string;
-  body: string;
+  content: string;
   is_group: boolean;
   created_at: string;
   modified_at: string;
-  deleted_at?: string;
+  deleted_at?: { Time: string; Valid: boolean } | null;
 }
 
 // Messages response

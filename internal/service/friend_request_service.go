@@ -56,7 +56,7 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 	}
 
 	if userID == body.To {
-		return http.StatusConflict, nil, errs.ErrSelfAction
+		return http.StatusBadRequest, nil, errs.ErrSelfAction
 	}
 
 	// Already friends → reject

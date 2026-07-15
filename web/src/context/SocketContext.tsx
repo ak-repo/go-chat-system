@@ -25,19 +25,21 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
   const tokenRef = useRef<string | null>(null);
 
-  // Update token ref when auth changes
+  // Register state change listener once
   useEffect(() => {
-    tokenRef.current = getToken();
-  }, [isAuthenticated]);
+    wsClient.setOnStateChange(setIsConnected);
+    return () => wsClient.setOnStateChange(() => {});
+  }, []);
 
   // Connect/disconnect based on auth state
   useEffect(() => {
-    if (isAuthenticated && tokenRef.current) {
-      wsClient.connect(tokenRef.current);
-      setIsConnected(true);
+    const token = getToken();
+    tokenRef.current = token;
+    
+    if (isAuthenticated && token) {
+      wsClient.connect(token);
     } else {
       wsClient.disconnect();
-      setIsConnected(false);
     }
   }, [isAuthenticated]);
 

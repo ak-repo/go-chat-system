@@ -59,6 +59,19 @@ func getUserFriendlyMessage(err error) string {
 	if errors.Is(err, errs.ErrBadRequest) {
 		return "bad request"
 	}
+	// Friend-specific errors
+	if errors.Is(err, errs.ErrSelfAction) {
+		return "cannot send friend request to yourself"
+	}
+	if errors.Is(err, errs.ErrAlreadyFriends) {
+		return "users are already friends"
+	}
+	if errors.Is(err, errs.ErrBlockedRelationship) {
+		return "one of the users has blocked the other"
+	}
+	if errors.Is(err, errs.ErrRequestNotFound) {
+		return "friend request not found"
+	}
 	return "an error occurred"
 }
 

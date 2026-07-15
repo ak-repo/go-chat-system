@@ -56,6 +56,7 @@ func GenerateRefreshToken(userID string) (string, time.Time, error) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    config.Config.JWT.Issuer,
 		},
 	}
 
