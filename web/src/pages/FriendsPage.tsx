@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,14 +12,21 @@ import {
   type FriendRequest,
   type User,
 } from '../api';
+import { useNotifications } from '../context/NotificationContext';
+import type { FriendRequestData } from '../api/websocket';
 
 export default function FriendsPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification, onFriendRequest } = useNotifications();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Notification panel state
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notificationPanelRef = useRef<HTMLDivElement>(null);
 
   // User search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -28,6 +35,17 @@ export default function FriendsPage() {
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'friends' | 'requests' | 'search'>('friends');
+
+  // Close notification panel when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (notificationPanelRef.current && !notificationPanelRef.current.contains(event.target as Node)) {
+        setShowNotifications(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -61,6 +79,23 @@ export default function FriendsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [user, navigate, loadData]);
+
+  // Listen for real-time friend request events and refresh data
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = onFriendRequest((data: FriendRequestData) => {
+      console.log('New friend request received:', data);
+      // Refresh friend requests when a new one arrives
+      loadData();
+      // Optionally auto-switch to requests tab if user is not currently on it
+      setActiveTab('requests');
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user, loadData, onFriendRequest]);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -131,6 +166,83 @@ export default function FriendsPage() {
         <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-xl font-bold">Chat App</h1>
           <div className="flex items-center gap-4">
+            {/* Notification Bell */}
+            <div className="relative" ref={notificationPanelRef}>
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-2 text-gray-600 hover:text-gray-800 transition-colors"
+                aria-label="Notifications"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Panel */}
+              {showNotifications && (
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                  <div className="p-3 border-b border-gray-200 flex justify-between items-center">
+                    <h3 className="font-semibold text-gray-800">Notifications</h3>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllAsRead}
+                        className="text-sm text-purple-600 hover:text-purple-800"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500">
+                      No notifications
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {notifications.slice(0, 10).map((notification) => (
+                        <li
+                          key={notification.id}
+                          className={`p-3 hover:bg-gray-50 cursor-pointer ${
+                            !notification.is_read ? 'bg-purple-50' : ''
+                          }`}
+                          onClick={() => !notification.is_read && markAsRead(notification.id)}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <p className={`text-sm ${!notification.is_read ? 'font-semibold' : 'font-normal'}`}>
+                                {notification.title}
+                              </p>
+                              {notification.body && (
+                                <p className="text-xs text-gray-500 mt-1">{notification.body}</p>
+                              )}
+                              <p className="text-xs text-gray-400 mt-1">
+                                {new Date(notification.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteNotification(notification.id);
+                              }}
+                              className="text-gray-400 hover:text-gray-600 ml-2"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
             <span className="text-gray-600">{user?.username}</span>
             <button
               onClick={handleLogout}

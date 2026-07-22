@@ -7,7 +7,7 @@ function getWSUrl(): string {
 }
 
 // WebSocket message types
-export type WSEventType = 'message' | 'typing' | 'read' | 'ack' | 'error';
+export type WSEventType = 'message' | 'typing' | 'read' | 'ack' | 'error' | 'notification' | 'friend_request';
 
 export interface WSMessage<T = unknown> {
   event: WSEventType;
@@ -35,6 +35,24 @@ export interface ReadData {
 export interface AckData {
   message_id: string;
   status: 'sent' | 'delivered' | 'read' | 'failed';
+}
+
+export interface NotificationData {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body?: string;
+  sender_id?: string;
+  reference_id?: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface FriendRequestData {
+  request_id: string;
+  sender_id: string;
+  sender_username: string;
 }
 
 // WebSocket client class
@@ -205,6 +223,16 @@ class WSClient {
   // Register error handler
   onError(handler: (data: { message: string }) => void): () => void {
     return this.on('error', handler as (data: unknown) => void);
+  }
+
+  // Register notification handler
+  onNotification(handler: (data: NotificationData) => void): () => void {
+    return this.on('notification', handler as (data: unknown) => void);
+  }
+
+  // Register friend request handler
+  onFriendRequest(handler: (data: FriendRequestData) => void): () => void {
+    return this.on('friend_request', handler as (data: unknown) => void);
   }
 
   // Check if connected

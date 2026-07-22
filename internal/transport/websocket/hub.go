@@ -7,28 +7,31 @@ import (
 	"log"
 	"time"
 
+	"github.com/ak-repo/go-chat-system/internal/domain/model"
 	"github.com/ak-repo/go-chat-system/internal/service"
 )
 
 type Hub struct {
-	clients        map[string]map[*Client]bool
-	rooms          map[string]*Room
-	register       chan *Client
-	unregister     chan *Client
-	incoming       chan *WSMessage
-	messageService service.MessageService
+	clients             map[string]map[*Client]bool
+	rooms               map[string]*Room
+	register            chan *Client
+	unregister          chan *Client
+	incoming            chan *WSMessage
+	messageService      service.MessageService
+	notificationService service.NotificationService
 	// Graceful shutdown support
 	quit chan struct{}
 }
 
-func NewHub(msgService service.MessageService) *Hub {
+func NewHub(msgService service.MessageService, notifService service.NotificationService) *Hub {
 	return &Hub{
-		clients:        make(map[string]map[*Client]bool),
-		register:       make(chan *Client),
-		unregister:     make(chan *Client),
-		incoming:       make(chan *WSMessage),
-		messageService: msgService,
-		quit:           make(chan struct{}),
+		clients:             make(map[string]map[*Client]bool),
+		register:            make(chan *Client),
+		unregister:          make(chan *Client),
+		incoming:            make(chan *WSMessage),
+		messageService:      msgService,
+		notificationService: notifService,
+		quit:                make(chan struct{}),
 	}
 }
 
@@ -107,13 +110,18 @@ func (h *Hub) routeMessage(msg *WSMessage) {
 	switch msg.Event {
 	case "user_online":
 		h.broadcastPresence(msg.SenderID, "user_online")
+		// Create notifications for friends
+		h.handleUserOnline(msg.SenderID)
 		return
 	case "user_offline":
 		h.broadcastPresence(msg.SenderID, "user_offline")
+		// Create notifications for friends
+		h.handleUserOffline(msg.SenderID)
 		return
 	}
 
 	if h.messageService != nil && msg.ReceiverType == ReceiverUser {
+		messageText := ""
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -123,12 +131,16 @@ func (h *Hub) routeMessage(msg *WSMessage) {
 				log.Printf("failed to parse message data: %v", err)
 				return
 			}
+			messageText = text
 
 			_, err = h.messageService.CreateMessage(ctx, msg.SenderID, msg.ReceiverID, text, false)
 			if err != nil {
 				log.Printf("failed to persist message: %v", err)
 			}
 		}()
+
+		// Check if recipient is offline and create notification
+		h.handleOfflineMessage(msg.SenderID, msg.ReceiverID, messageText)
 	}
 
 	switch msg.ReceiverType {
@@ -137,6 +149,96 @@ func (h *Hub) routeMessage(msg *WSMessage) {
 	case ReceiverGroup:
 		h.sendToGroup(msg)
 	}
+}
+
+func (h *Hub) handleUserOnline(userID string) {
+	if h.notificationService == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := h.notificationService.CreateUserOnlineNotification(ctx, userID)
+		if err != nil {
+			log.Printf("failed to create user online notifications: %v", err)
+		}
+	}()
+}
+
+func (h *Hub) handleUserOffline(userID string) {
+	if h.notificationService == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err := h.notificationService.CreateUserOfflineNotification(ctx, userID)
+		if err != nil {
+			log.Printf("failed to create user offline notifications: %v", err)
+		}
+	}()
+}
+
+func (h *Hub) handleOfflineMessage(senderID, receiverID, messageText string) {
+	if h.notificationService == nil {
+		return
+	}
+
+	// Check if receiver is online
+	if _, ok := h.clients[receiverID]; ok {
+		return // Receiver is online, no notification needed
+	}
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		messageID := "" // Message ID would be returned from CreateMessage if we had it
+		preview := messageText
+		if len(preview) > 50 {
+			preview = preview[:47] + "..."
+		}
+
+		_, err := h.notificationService.CreateNewMessageNotification(ctx, receiverID, senderID, messageID, preview)
+		if err != nil {
+			log.Printf("failed to create offline message notification: %v", err)
+		}
+	}()
+}
+
+// SendNotification sends a notification to a specific user via WebSocket
+func (h *Hub) SendNotification(userID string, notification *model.Notification) {
+	data, err := json.Marshal(notification)
+	if err != nil {
+		log.Printf("failed to marshal notification: %v", err)
+		return
+	}
+
+	msg := WSMessage{
+		Event:    "notification",
+		SenderID: notification.SenderID,
+		Data:     data,
+	}
+	h.sendToUser(&msg)
+}
+
+// SendFriendRequestNotification sends a friend request notification to a specific user
+func (h *Hub) SendFriendRequestNotification(receiverID, requestID, senderID, senderUsername string) {
+	data := map[string]string{
+		"request_id":      requestID,
+		"sender_id":       senderID,
+		"sender_username": senderUsername,
+	}
+
+	jsonData, _ := json.Marshal(data)
+
+	msg := WSMessage{
+		Event:       "friend_request",
+		SenderID:    senderID,
+		ReceiverID:  receiverID,
+		Data:        jsonData,
+	}
+	h.sendToUser(&msg)
 }
 
 func extractMessageText(data json.RawMessage) (string, error) {

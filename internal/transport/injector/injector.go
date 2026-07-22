@@ -4,6 +4,7 @@ import (
 	"github.com/ak-repo/go-chat-system/internal/platform/database"
 	"github.com/ak-repo/go-chat-system/internal/repository"
 	"github.com/ak-repo/go-chat-system/internal/service"
+	"github.com/ak-repo/go-chat-system/internal/transport/websocket"
 )
 
 // Container holds all dependencies  want to share across  app.
@@ -11,18 +12,23 @@ import (
 type Container struct {
 
 	// Repositories
-	UserRepo          repository.UserRepository
-	FriendRepo        repository.FriendRepository
-	FriendRequestRepo repository.FriendRequestRepository
-	BlockRepo         repository.BlockRepository
-	MessageRepo       repository.MessageRepository
+	UserRepo            repository.UserRepository
+	FriendRepo          repository.FriendRepository
+	FriendRequestRepo   repository.FriendRequestRepository
+	BlockRepo           repository.BlockRepository
+	MessageRepo         repository.MessageRepository
+	NotificationRepo    repository.NotificationRepository
 
 	// Service
-	UserService          service.UserService
-	FriendService        service.FriendService
-	FriendRequestService service.FriendRequestService
-	BlockService         service.BlockService
-	MessageService       service.MessageService
+	UserService            service.UserService
+	FriendService          service.FriendService
+	FriendRequestService   service.FriendRequestService
+	BlockService           service.BlockService
+	MessageService         service.MessageService
+	NotificationService    service.NotificationService
+
+	// WebSocket Hub
+	Hub *websocket.Hub
 }
 
 // Init creates and wires dependencies.
@@ -37,24 +43,28 @@ func Init() *Container {
 	blockRepo := repository.BlockRepositoryInit(db)
 	friendReqRepo := repository.FriendRequestRepositoryInit(db)
 	messageRepo := repository.NewMessageRepositoryImpl(db)
+	notificationRepo := repository.NewNotificationRepositoryImpl(db)
 
 	// 2) Create services (business layer)
 	friendService := service.NewFriendServiceImpl(friendRepo)
 	userService := service.NewUserServiceImpl(userRepo)
 	blockService := service.BlockServiceInit(blockRepo)
-	friendReqService := service.FriendRequestServiceInit(friendReqRepo, friendRepo, blockRepo)
 	messageService := service.NewMessageServiceImpl(messageRepo)
+	notificationService := service.NewNotificationServiceImpl(notificationRepo, userRepo, friendRepo)
+	friendReqService := service.FriendRequestServiceInit(friendReqRepo, friendRepo, blockRepo, notificationService)
 
 	return &Container{
-		FriendRepo:           friendRepo,
-		FriendService:        friendService,
-		UserRepo:             userRepo,
-		UserService:          userService,
-		FriendRequestRepo:    friendReqRepo,
-		FriendRequestService: friendReqService,
-		BlockRepo:            blockRepo,
-		BlockService:         blockService,
-		MessageRepo:          messageRepo,
-		MessageService:       messageService,
+		FriendRepo:            friendRepo,
+		FriendService:         friendService,
+		UserRepo:              userRepo,
+		UserService:           userService,
+		FriendRequestRepo:     friendReqRepo,
+		FriendRequestService:  friendReqService,
+		BlockRepo:             blockRepo,
+		BlockService:          blockService,
+		MessageRepo:           messageRepo,
+		MessageService:        messageService,
+		NotificationRepo:     notificationRepo,
+		NotificationService:  notificationService,
 	}
 }
