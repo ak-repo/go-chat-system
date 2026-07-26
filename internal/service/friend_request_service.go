@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,9 +10,11 @@ import (
 	"github.com/ak-repo/go-chat-system/internal/domain/model"
 	"github.com/ak-repo/go-chat-system/internal/repository"
 	"github.com/ak-repo/go-chat-system/internal/shared/errs"
+	"github.com/ak-repo/go-chat-system/internal/shared/logger"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
 	"github.com/ak-repo/go-chat-system/internal/transport/middleware"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 type FriendRequestService interface {
@@ -21,18 +24,37 @@ type FriendRequestService interface {
 	CancelRequest(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 	GetAllRequests(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 	GetPendingRequest(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
+	SetHub(hub interface{ SendFriendRequestNotification(receiverID, requestID, senderID, senderUsername string) })
 }
 
 type FriendRequestServiceImpl struct {
-	repo       repository.FriendRequestRepository
-	friendRepo repository.FriendRepository
-	blockRepo  repository.BlockRepository
+	repo                repository.FriendRequestRepository
+	friendRepo          repository.FriendRepository
+	blockRepo           repository.BlockRepository
+	userRepo            repository.UserRepository
+	notificationService NotificationService
+	hub                 interface {
+		SendFriendRequestNotification(receiverID, requestID, senderID, senderUsername string)
+	}
 }
 
 func FriendRequestServiceInit(repo repository.FriendRequestRepository,
 	friendRepo repository.FriendRepository,
-	blockRepo repository.BlockRepository) *FriendRequestServiceImpl {
-	return &FriendRequestServiceImpl{repo: repo, friendRepo: friendRepo, blockRepo: blockRepo}
+	blockRepo repository.BlockRepository,
+	userRepo repository.UserRepository,
+	notificationService NotificationService) *FriendRequestServiceImpl {
+	return &FriendRequestServiceImpl{
+		repo:                repo,
+		friendRepo:          friendRepo,
+		blockRepo:           blockRepo,
+		userRepo:            userRepo,
+		notificationService: notificationService,
+	}
+}
+
+// SetHub sets the WebSocket hub for real-time notifications
+func (s *FriendRequestServiceImpl) SetHub(hub interface{ SendFriendRequestNotification(receiverID, requestID, senderID, senderUsername string) }) {
+	s.hub = hub
 }
 
 // POST
@@ -106,6 +128,32 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 		return http.StatusInternalServerError, nil, err
 	}
 
+	// Get sender info for WebSocket notification
+	sender, _ := s.userRepo.GetByID(r.Context(), userID)
+	senderUsername := "Someone"
+	if sender != nil {
+		senderUsername = sender.Username
+	}
+
+	// Create notification for the receiver
+	if s.notificationService != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := s.notificationService.CreateFriendRequestNotification(ctx, body.To, userID, friendReq.ID)
+			if err != nil {
+				logger.Logger.Warn("failed to create friend request notification", zap.Error(err))
+			}
+		}()
+	}
+
+	// Send real-time WebSocket notification
+	if s.hub != nil {
+		go func() {
+			s.hub.SendFriendRequestNotification(body.To, friendReq.ID, userID, senderUsername)
+		}()
+	}
+
 	return http.StatusCreated, nil, nil
 }
 
@@ -129,6 +177,22 @@ func (s *FriendRequestServiceImpl) AcceptRequest(w http.ResponseWriter, r *http.
 
 	if err := s.repo.AcceptRequest(r.Context(), body.RequestID, body.ReceiverID); err != nil {
 		return http.StatusInternalServerError, nil, errs.ErrDatabase
+	}
+
+	// Create notification for the original sender
+	if s.notificationService != nil {
+		// Get the friend request to find the original sender
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			// Find the request to get sender info
+			if req, err := s.repo.GetRequestByID(ctx, body.RequestID); err == nil && req != nil {
+				_, err := s.notificationService.CreateFriendAcceptedNotification(ctx, req.SenderID, body.ReceiverID, req.ID)
+				if err != nil {
+					logger.Logger.Warn("failed to create friend accepted notification", zap.Error(err))
+				}
+			}
+		}()
 	}
 
 	return http.StatusOK, nil, nil
@@ -209,6 +273,21 @@ func (s *FriendRequestServiceImpl) RejectRequest(w http.ResponseWriter, r *http.
 
 	if err := s.repo.RejectRequest(r.Context(), body.RequestID, body.ReceiverID); err != nil {
 		return http.StatusInternalServerError, nil, errs.ErrDatabase
+	}
+
+	// Create notification for the original sender
+	if s.notificationService != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			// Find the request to get sender info
+			if req, err := s.repo.GetRequestByID(ctx, body.RequestID); err == nil && req != nil {
+				_, err := s.notificationService.CreateFriendRejectedNotification(ctx, req.SenderID, body.ReceiverID, req.ID)
+				if err != nil {
+					logger.Logger.Warn("failed to create friend rejected notification", zap.Error(err))
+				}
+			}
+		}()
 	}
 
 	return http.StatusOK, nil, nil

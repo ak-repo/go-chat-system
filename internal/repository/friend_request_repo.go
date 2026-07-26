@@ -13,6 +13,7 @@ import (
 type FriendRequestRepository interface {
 	CreateRequest(ctx context.Context, req *model.FriendRequest) error
 	GetPendingRequest(ctx context.Context, sender, receiver string) (*model.FriendRequest, error)
+	GetRequestByID(ctx context.Context, requestID string) (*model.FriendRequest, error)
 	GetAllRequests(ctx context.Context, userID string) (model.FriendRequestsDTO, error)
 
 	AcceptRequest(ctx context.Context, requestID, receiverID string) error
@@ -58,6 +59,25 @@ func (r *FriendRequestRepositoryImpl) GetPendingRequest(
 		  AND receiver_id=$2
 		  AND status='pending'
 	`, sender, receiver)
+
+	var fr model.FriendRequest
+	err := row.Scan(&fr.ID, &fr.SenderID, &fr.ReceiverID, &fr.Status, &fr.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &fr, nil
+}
+
+func (r *FriendRequestRepositoryImpl) GetRequestByID(ctx context.Context, requestID string) (*model.FriendRequest, error) {
+	row := r.db.QueryRow(ctx, `
+		SELECT id, sender_id, receiver_id, status, created_at
+		FROM friend_requests
+		WHERE id = $1
+	`, requestID)
 
 	var fr model.FriendRequest
 	err := row.Scan(&fr.ID, &fr.SenderID, &fr.ReceiverID, &fr.Status, &fr.CreatedAt)

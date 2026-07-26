@@ -67,9 +67,20 @@ func Router() chi.Router {
 			// Messages
 			pr.Get("/messages", wrapper.HTTPResponseWrapper(app.MessageService.GetMessages))
 
+			// Notifications
+			pr.Route("/notifications", func(n chi.Router) {
+				n.Get("/", wrapper.HTTPResponseWrapper(app.NotificationService.GetNotifications))
+				n.Post("/read", wrapper.HTTPResponseWrapper(app.NotificationService.MarkAsRead))
+				n.Post("/read-all", wrapper.HTTPResponseWrapper(app.NotificationService.MarkAllAsRead))
+				n.Delete("/", wrapper.HTTPResponseWrapper(app.NotificationService.DeleteNotification))
+			})
+
 			// Websocket - higher rate limit to allow frequent connections
-			GlobalHub = websocket.NewHub(app.MessageService)
+			GlobalHub = websocket.NewHub(app.MessageService, app.NotificationService)
 			go GlobalHub.Run()
+
+			// Pass Hub to services that need it
+			app.FriendRequestService.SetHub(GlobalHub)
 
 			wsHandler := wrapper.NewWebsocketHandler(GlobalHub)
 			pr.Get("/ws", wsHandler.Handler)

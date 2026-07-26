@@ -11,6 +11,7 @@ type FriendRepository interface {
 	CreateFriendship(ctx context.Context, a, b string) error
 	AreFriends(ctx context.Context, a, b string) (bool, error)
 	ListFriends(ctx context.Context, userID string, limit, offset int) (model.FriendsDTO, error)
+	GetAllFriendIDs(ctx context.Context, userID string) ([]string, error)
 }
 
 type FriendRepositoryImpl struct {
@@ -79,4 +80,26 @@ func (r *FriendRepositoryImpl) ListFriends(ctx context.Context, userID string, l
 	}
 
 	return friends, rows.Err()
+}
+
+func (r *FriendRepositoryImpl) GetAllFriendIDs(ctx context.Context, userID string) ([]string, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT friend_id
+		FROM friends
+		WHERE user_id = $1
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var friendIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		friendIDs = append(friendIDs, id)
+	}
+	return friendIDs, rows.Err()
 }

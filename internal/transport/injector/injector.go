@@ -11,18 +11,20 @@ import (
 type Container struct {
 
 	// Repositories
-	UserRepo          repository.UserRepository
-	FriendRepo        repository.FriendRepository
-	FriendRequestRepo repository.FriendRequestRepository
-	BlockRepo         repository.BlockRepository
-	MessageRepo       repository.MessageRepository
+	UserRepo            repository.UserRepository
+	FriendRepo          repository.FriendRepository
+	FriendRequestRepo   repository.FriendRequestRepository
+	BlockRepo           repository.BlockRepository
+	MessageRepo         repository.MessageRepository
+	NotificationRepo    repository.NotificationRepository
 
-	// Service
-	UserService          service.UserService
-	FriendService        service.FriendService
-	FriendRequestService service.FriendRequestService
-	BlockService         service.BlockService
-	MessageService       service.MessageService
+	// Services
+	UserService            service.UserService
+	FriendService          service.FriendService
+	FriendRequestService   service.FriendRequestService
+	BlockService           service.BlockService
+	MessageService         service.MessageService
+	NotificationService    service.NotificationService
 }
 
 // Init creates and wires dependencies.
@@ -37,24 +39,28 @@ func Init() *Container {
 	blockRepo := repository.BlockRepositoryInit(db)
 	friendReqRepo := repository.FriendRequestRepositoryInit(db)
 	messageRepo := repository.NewMessageRepositoryImpl(db)
+	notificationRepo := repository.NewNotificationRepositoryImpl(db)
 
 	// 2) Create services (business layer)
 	friendService := service.NewFriendServiceImpl(friendRepo)
 	userService := service.NewUserServiceImpl(userRepo)
 	blockService := service.BlockServiceInit(blockRepo)
-	friendReqService := service.FriendRequestServiceInit(friendReqRepo, friendRepo, blockRepo)
 	messageService := service.NewMessageServiceImpl(messageRepo)
+	notificationService := service.NewNotificationServiceImpl(notificationRepo, userRepo, friendRepo)
+	friendReqService := service.FriendRequestServiceInit(friendReqRepo, friendRepo, blockRepo, userRepo, notificationService)
 
 	return &Container{
-		FriendRepo:           friendRepo,
-		FriendService:        friendService,
-		UserRepo:             userRepo,
-		UserService:          userService,
-		FriendRequestRepo:    friendReqRepo,
-		FriendRequestService: friendReqService,
-		BlockRepo:            blockRepo,
-		BlockService:         blockService,
-		MessageRepo:          messageRepo,
-		MessageService:       messageService,
+		FriendRepo:            friendRepo,
+		FriendService:         friendService,
+		UserRepo:              userRepo,
+		UserService:           userService,
+		FriendRequestRepo:     friendReqRepo,
+		FriendRequestService:  friendReqService,
+		BlockRepo:             blockRepo,
+		BlockService:          blockService,
+		MessageRepo:           messageRepo,
+		MessageService:        messageService,
+		NotificationRepo:     notificationRepo,
+		NotificationService:  notificationService,
 	}
 }
