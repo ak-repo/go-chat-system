@@ -53,6 +53,10 @@ build: check ## Build Go binary
 run: check ## Run application locally
 	go run ./cmd/server
 
+.PHONY: web-run
+web-run: check ## Run frontend
+	cd ./web &&	npm run dev 
+
 # ==============================
 # Database migrations (Goose)
 # ==============================
