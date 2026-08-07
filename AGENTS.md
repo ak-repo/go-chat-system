@@ -1,32 +1,120 @@
-# Repository Notes
+# go-chat-system
 
-- Keep new Go code under `internal/`; the old root-level `config/`, `database/`, `model/`, `repository/`, `service/`, `transport/`, and `pkg/` paths are stale.
-- `cmd/server/main.go` is the only executable entrypoint.
-- Current package layout is:
-  - `internal/platform/config`
-  - `internal/platform/database`
-  - `internal/domain/model`
-  - `internal/repository`
-  - `internal/service`
-  - `internal/transport/{injector,routes,middleware,websocket,wrapper}`
-  - `internal/shared/{errs,helper,jwt,logger,utils}`
+Backend-first real-time chat application.
 
-# Commands
+## Stack
 
-- Run from the repo root; `config.Load()` and the Makefile both expect `./config/config.yaml`.
-- `make check` is the prerequisite for `make build`, `make run`, and all `make migrate-*` targets.
-- `make check` requires `go`, `yq`, and `goose` on `PATH`.
-- `make run` starts the server with `go run ./cmd/server`.
-- `go test ./...` is the main verification command.
-- For a focused package check, use `go test ./internal/<package>/...`.
+Backend:
+- Go
+- Chi
+- PostgreSQL
+- Redis
+- Gorilla WebSocket
+- Goose migrations
 
-# Editing Rules
+Frontend:
+- React
+- TypeScript
+- Vite
 
-- Update imports after moving files; the module path stays `github.com/ak-repo/go-chat-system`, but app code now imports through `internal/...`.
-- Load config before using `internal/shared/logger`, `internal/shared/jwt`, or the DB/Redis setup, because they read `config.Config`.
-- Use `internal/transport/middleware.UserIDKey` for authenticated user context in new code.
-- `internal/transport/routes.GlobalHub` is stopped during shutdown in `main`; preserve that wiring if you touch WebSocket startup/shutdown.
+## Architecture
 
-# Verification Gotcha
+Backend request flow:
 
-- Treat `README.md` as outdated for package paths; verify structure from code and `Makefile` first.
+Transport
+→ Service
+→ Repository
+→ PostgreSQL/Redis
+
+Do not bypass layers without an explicit architectural reason.
+
+Primary directories:
+
+- cmd/server/          application bootstrap
+- internal/domain/    domain models
+- internal/repository persistence
+- internal/service/   business logic
+- internal/transport/ HTTP/WS transport
+- internal/platform/  database/config infrastructure
+- internal/shared/    shared helpers
+- migrations/         Goose PostgreSQL migrations
+- web/                React TypeScript application
+
+## Realtime
+
+WebSocket implementation lives under:
+
+internal/transport/websocket/
+
+Message business logic belongs in:
+
+internal/service/message_service.go
+
+Persistence belongs in:
+
+internal/repository/message_repo.go
+
+Never trust sender_id supplied by the WebSocket client.
+Sender identity must come from authenticated context.
+
+## Database
+
+PostgreSQL migrations use Goose.
+
+Never modify an already-deployed migration.
+Create a new migration.
+
+Migrations must include production-safe Up/Down behavior unless rollback
+is intentionally impossible and documented.
+
+## Backend Development
+
+Before completing backend changes:
+
+go fmt ./...
+go vet ./...
+go test ./...
+
+Keep handlers thin.
+
+Business rules belong in service layer.
+SQL belongs in repository layer.
+
+## Frontend Development
+
+Frontend is under web/.
+
+Use TypeScript.
+Keep API calls under web/src/api/.
+WebSocket transport belongs in the socket/API layer rather than UI components.
+
+Before completing frontend changes:
+
+cd web
+npm run lint
+npm run build
+
+## Feature Changes
+
+For non-trivial features:
+
+1. inspect existing implementation
+2. create/update a plan under plans/
+3. identify API/database/WebSocket impact
+4. implement smallest coherent backend change
+5. test backend
+6. implement frontend integration
+7. run full verification
+8. perform review
+
+Do not refactor unrelated code while implementing a feature.
+
+## Safety
+
+Never expose:
+- passwords
+- JWT secrets
+- config secrets
+- database credentials
+
+Do not commit config/config.yaml secrets.
