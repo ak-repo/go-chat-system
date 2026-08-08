@@ -20,6 +20,33 @@ export interface MessagesResponse {
   offset: number;
 }
 
+function getMessageTimestamp(message: Message): number {
+  const timestamp = Date.parse(message.created_at);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+export function compareMessagesChronologically(a: Message, b: Message): number {
+  const byCreatedAt = getMessageTimestamp(a) - getMessageTimestamp(b);
+  if (byCreatedAt !== 0) return byCreatedAt;
+
+  return a.id.localeCompare(b.id);
+}
+
+export function sortMessagesChronologically(messages: Message[]): Message[] {
+  return [...messages].sort(compareMessagesChronologically);
+}
+
+export function mergeMessagesChronologically(
+  currentMessages: Message[],
+  nextMessage: Message
+): Message[] {
+  if (currentMessages.some((message) => message.id === nextMessage.id)) {
+    return currentMessages;
+  }
+
+  return sortMessagesChronologically([...currentMessages, nextMessage]);
+}
+
 // Get messages between current user and another user
 export async function getMessages(
   otherUserId: string,

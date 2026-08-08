@@ -2,7 +2,12 @@ import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { getMessages, type Message } from '../api';
+import {
+  getMessages,
+  mergeMessagesChronologically,
+  sortMessagesChronologically,
+  type Message,
+} from '../api';
 
 export default function ChatPage() {
   const { userId } = useParams<{ userId: string }>();
@@ -25,7 +30,7 @@ export default function ChatPage() {
     try {
       const response = await getMessages(userId, 50, 0);
       if (response.success && response.data) {
-        setMessages(response.data.messages ?? []);
+        setMessages(sortMessagesChronologically(response.data.messages ?? []));
       }
     } catch {
       setError('Failed to load messages');
@@ -57,8 +62,7 @@ export default function ChatPage() {
         modified_at: msg.timestamp,
       };
       setMessages((prev) => {
-        if (prev.some((m) => m.id === msg.message_id)) return prev;
-        return [...prev, newMsg];
+        return mergeMessagesChronologically(prev, newMsg);
       });
     });
 
@@ -94,7 +98,7 @@ export default function ChatPage() {
       modified_at: now,
     };
 
-    setMessages((prev) => [...prev, pendingMessage]);
+    setMessages((prev) => mergeMessagesChronologically(prev, pendingMessage));
     sendMessage(userId, inputMessage.trim());
     setInputMessage('');
 
