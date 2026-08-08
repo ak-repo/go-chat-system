@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "build",
+  "permission": {
+    "skill": {
+      "*": "allow"
+    },
+    "bash": {
+      "*": "ask",
+      "git status*": "allow",
+      "git diff*": "allow",
+      "go test*": "allow",
+      "go vet*": "allow",
+      "gofmt*": "allow",
+      "go build*": "allow",
+      "npm run lint*": "allow",
+      "npm run build*": "allow",
+      "git push*": "deny",
+      "git reset --hard*": "deny",
+      "git clean*": "deny",
+      "rm -rf*": "deny"
+    }
+  }
+}
