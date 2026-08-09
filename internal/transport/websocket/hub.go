@@ -24,6 +24,7 @@ type Hub struct {
 func NewHub(msgService service.MessageService) *Hub {
 	return &Hub{
 		clients:        make(map[string]map[*Client]bool),
+		rooms:          make(map[string]*Room),
 		register:       make(chan *Client),
 		unregister:     make(chan *Client),
 		incoming:       make(chan *WSMessage),
@@ -113,22 +114,9 @@ func (h *Hub) routeMessage(msg *WSMessage) {
 		return
 	}
 
-	if h.messageService != nil && msg.ReceiverType == ReceiverUser {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			text, err := extractMessageText(msg.Data)
-			if err != nil {
-				log.Printf("failed to parse message data: %v", err)
-				return
-			}
-
-			_, err = h.messageService.CreateMessage(ctx, msg.SenderID, msg.ReceiverID, text, false)
-			if err != nil {
-				log.Printf("failed to persist message: %v", err)
-			}
-		}()
+	if msg.Event == "message" && msg.ReceiverType == ReceiverUser {
+		h.handleUserMessage(msg)
+		return
 	}
 
 	switch msg.ReceiverType {
@@ -137,6 +125,61 @@ func (h *Hub) routeMessage(msg *WSMessage) {
 	case ReceiverGroup:
 		h.sendToGroup(msg)
 	}
+}
+
+func (h *Hub) handleUserMessage(msg *WSMessage) {
+	if h.messageService == nil {
+		h.sendErrorToUser(msg.SenderID, "message service unavailable")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	text, err := extractMessageText(msg.Data)
+	if err != nil {
+		log.Printf("failed to parse message data: %v", err)
+		h.sendErrorToUser(msg.SenderID, "message text missing")
+		return
+	}
+
+	persisted, err := h.messageService.CreateMessage(ctx, msg.SenderID, msg.ReceiverID, text, false)
+	if err != nil {
+		log.Printf("failed to persist message: %v", err)
+		h.sendErrorToUser(msg.SenderID, "message could not be sent")
+		return
+	}
+
+	data, err := json.Marshal(map[string]string{
+		"message_id": persisted.ID,
+		"content":    persisted.Body,
+		"timestamp":  persisted.CreatedAt.Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		log.Printf("failed to marshal message data: %v", err)
+		h.sendErrorToUser(msg.SenderID, "message could not be sent")
+		return
+	}
+
+	outbound := &WSMessage{
+		Event:        "message",
+		SenderID:     persisted.SenderID,
+		ReceiverID:   persisted.ReceiverID,
+		ReceiverType: ReceiverUser,
+		Data:         data,
+	}
+	h.sendToUser(outbound)
+
+	ackData, _ := json.Marshal(map[string]string{
+		"message_id": persisted.ID,
+		"status":     "sent",
+	})
+	h.sendToUser(&WSMessage{Event: "ack", SenderID: "system", ReceiverID: persisted.SenderID, ReceiverType: ReceiverUser, Data: ackData})
+}
+
+func (h *Hub) sendErrorToUser(userID, message string) {
+	data, _ := json.Marshal(map[string]string{"message": message})
+	h.sendToUser(&WSMessage{Event: "error", SenderID: "system", ReceiverID: userID, ReceiverType: ReceiverUser, Data: data})
 }
 
 func extractMessageText(data json.RawMessage) (string, error) {

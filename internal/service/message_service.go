@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ak-repo/go-chat-system/internal/domain/model"
@@ -22,21 +23,51 @@ type MessageService interface {
 
 type MessageServiceImpl struct {
 	messageRepo repository.MessageRepository
+	friendRepo  repository.FriendRepository
+	blockRepo   repository.BlockRepository
 }
 
-func NewMessageServiceImpl(messageRepo repository.MessageRepository) *MessageServiceImpl {
-	return &MessageServiceImpl{messageRepo: messageRepo}
+func NewMessageServiceImpl(messageRepo repository.MessageRepository, friendRepo repository.FriendRepository, blockRepo repository.BlockRepository) *MessageServiceImpl {
+	return &MessageServiceImpl{messageRepo: messageRepo, friendRepo: friendRepo, blockRepo: blockRepo}
 }
 
 func (s *MessageServiceImpl) CreateMessage(ctx context.Context, senderID, receiverID, body string, isGroup bool) (*model.Message, error) {
+	body = strings.TrimSpace(body)
+	if senderID == "" || receiverID == "" || body == "" {
+		return nil, errs.ErrBadRequest
+	}
+
+	if !isGroup {
+		if s.friendRepo == nil || s.blockRepo == nil {
+			return nil, errs.ErrInternal
+		}
+
+		blocked, err := s.blockRepo.IsBlocked(ctx, senderID, receiverID)
+		if err != nil {
+			return nil, err
+		}
+		if blocked {
+			return nil, errs.ErrBlockedRelationship
+		}
+
+		areFriends, err := s.friendRepo.AreFriends(ctx, senderID, receiverID)
+		if err != nil {
+			return nil, err
+		}
+		if !areFriends {
+			return nil, errs.ErrForbidden
+		}
+	}
+
+	now := time.Now().UTC()
 	msg := &model.Message{
 		ID:         uuid.New().String(),
 		SenderID:   senderID,
 		ReceiverID: receiverID,
 		Body:       body,
 		IsGroup:    isGroup,
-		CreatedAt:  time.Now().UTC(),
-		ModifiedAt: time.Now().UTC(),
+		CreatedAt:  now,
+		ModifiedAt: now,
 	}
 
 	if err := s.messageRepo.CreateMessage(ctx, msg); err != nil {

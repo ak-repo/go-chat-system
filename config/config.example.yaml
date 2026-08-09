@@ -33,7 +33,7 @@ server:
 # Frontend Ports : "http://localhost:3000"
 CORS:
   port: 3000
-  host: http://localhost
+  host: localhost
 
 # Logging Configuration
 logging:

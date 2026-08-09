@@ -17,18 +17,48 @@ import (
 type fakeMessageRepo struct {
 	messages model.Messages
 	err      error
+	created  *model.Message
 }
 
-func (f fakeMessageRepo) CreateMessage(context.Context, *model.Message) error {
+func (f *fakeMessageRepo) CreateMessage(_ context.Context, msg *model.Message) error {
+	f.created = msg
 	return nil
 }
 
-func (f fakeMessageRepo) GetMessagesByReceiver(context.Context, string, int, int) (model.Messages, error) {
+func (f *fakeMessageRepo) GetMessagesByReceiver(context.Context, string, int, int) (model.Messages, error) {
 	return nil, nil
 }
 
-func (f fakeMessageRepo) GetMessagesBetweenUsers(context.Context, string, string, int, int) (model.Messages, error) {
+func (f *fakeMessageRepo) GetMessagesBetweenUsers(context.Context, string, string, int, int) (model.Messages, error) {
 	return f.messages, f.err
+}
+
+type fakeFriendRepo struct {
+	areFriends bool
+	err        error
+}
+
+func (f fakeFriendRepo) CreateFriendship(context.Context, string, string) error { return nil }
+
+func (f fakeFriendRepo) AreFriends(context.Context, string, string) (bool, error) {
+	return f.areFriends, f.err
+}
+
+func (f fakeFriendRepo) ListFriends(context.Context, string, int, int) (model.FriendsDTO, error) {
+	return nil, nil
+}
+
+type fakeBlockRepo struct {
+	blocked bool
+	err     error
+}
+
+func (f fakeBlockRepo) BlockUser(context.Context, string, string) error { return nil }
+
+func (f fakeBlockRepo) UnblockUser(context.Context, string, string) error { return nil }
+
+func (f fakeBlockRepo) IsBlocked(context.Context, string, string) (bool, error) {
+	return f.blocked, f.err
 }
 
 func TestGetMessagesUsesMiddlewareUserIDKey(t *testing.T) {
@@ -45,7 +75,7 @@ func TestGetMessagesUsesMiddlewareUserIDKey(t *testing.T) {
 		},
 	}
 
-	service := NewMessageServiceImpl(repo)
+	service := NewMessageServiceImpl(&repo, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/messages?user_id=user-2&limit=50&offset=0", nil)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "user-1"))
 
@@ -74,7 +104,7 @@ func TestGetMessagesUsesMiddlewareUserIDKey(t *testing.T) {
 
 func TestGetMessagesRejectsMissingMiddlewareUserIDKey(t *testing.T) {
 	repo := fakeMessageRepo{}
-	service := NewMessageServiceImpl(repo)
+	service := NewMessageServiceImpl(&repo, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/messages?user_id=user-2", nil)
 	req = req.WithContext(context.WithValue(req.Context(), "userID", "user-1"))
 
@@ -92,7 +122,7 @@ func TestGetMessagesRejectsMissingMiddlewareUserIDKey(t *testing.T) {
 
 func TestGetMessagesReturnsEmptySliceWhenNoMessages(t *testing.T) {
 	repo := fakeMessageRepo{messages: nil}
-	service := NewMessageServiceImpl(repo)
+	service := NewMessageServiceImpl(&repo, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/messages?user_id=user-2", nil)
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, "user-1"))
 
@@ -117,5 +147,47 @@ func TestGetMessagesReturnsEmptySliceWhenNoMessages(t *testing.T) {
 	}
 	if len(msgs) != 0 {
 		t.Fatalf("expected empty slice, got %d items", len(msgs))
+	}
+}
+
+func TestCreateMessageRequiresFriendship(t *testing.T) {
+	repo := &fakeMessageRepo{}
+	service := NewMessageServiceImpl(repo, fakeFriendRepo{areFriends: false}, fakeBlockRepo{})
+
+	_, err := service.CreateMessage(context.Background(), "user-1", "user-2", "hello", false)
+	if !errors.Is(err, errs.ErrForbidden) {
+		t.Fatalf("expected forbidden error, got %v", err)
+	}
+	if repo.created != nil {
+		t.Fatalf("expected message not to be persisted")
+	}
+}
+
+func TestCreateMessageRejectsBlockedRelationship(t *testing.T) {
+	repo := &fakeMessageRepo{}
+	service := NewMessageServiceImpl(repo, fakeFriendRepo{areFriends: true}, fakeBlockRepo{blocked: true})
+
+	_, err := service.CreateMessage(context.Background(), "user-1", "user-2", "hello", false)
+	if !errors.Is(err, errs.ErrBlockedRelationship) {
+		t.Fatalf("expected blocked relationship error, got %v", err)
+	}
+	if repo.created != nil {
+		t.Fatalf("expected message not to be persisted")
+	}
+}
+
+func TestCreateMessagePersistsForFriends(t *testing.T) {
+	repo := &fakeMessageRepo{}
+	service := NewMessageServiceImpl(repo, fakeFriendRepo{areFriends: true}, fakeBlockRepo{})
+
+	msg, err := service.CreateMessage(context.Background(), "user-1", "user-2", " hello ", false)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if repo.created == nil {
+		t.Fatalf("expected message to be persisted")
+	}
+	if msg.Body != "hello" {
+		t.Fatalf("expected trimmed body, got %q", msg.Body)
 	}
 }

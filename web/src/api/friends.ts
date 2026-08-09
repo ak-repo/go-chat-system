@@ -65,30 +65,22 @@ export async function createFriendRequest(
 }
 
 // Accept friend request
-export async function acceptFriendRequest(
-  requestId: string,
-  receiverId: string
-): Promise<ApiResponse<null>> {
+export async function acceptFriendRequest(requestId: string): Promise<ApiResponse<null>> {
   const response = await apiClient.post<ApiResponse<null>>(
     '/friend-requests/accept',
     {
       request_id: requestId,
-      received_id: receiverId,
     }
   );
   return toApiResponse(response.data);
 }
 
 // Reject friend request
-export async function rejectFriendRequest(
-  requestId: string,
-  receiverId: string
-): Promise<ApiResponse<null>> {
+export async function rejectFriendRequest(requestId: string): Promise<ApiResponse<null>> {
   const response = await apiClient.post<ApiResponse<null>>(
     '/friend-requests/reject',
     {
       request_id: requestId,
-      receiver_id: receiverId,
     }
   );
   return toApiResponse(response.data);
@@ -110,7 +102,7 @@ export async function cancelFriendRequest(
 // Block user
 export async function blockUser(userId: string): Promise<ApiResponse<null>> {
   const response = await apiClient.post<ApiResponse<null>>('/blocks', {
-    user_id: userId,
+    target: userId,
   });
   return toApiResponse(response.data);
 }
@@ -118,7 +110,7 @@ export async function blockUser(userId: string): Promise<ApiResponse<null>> {
 // Unblock user
 export async function unblockUser(userId: string): Promise<ApiResponse<null>> {
   const response = await apiClient.post<ApiResponse<null>>('/blocks/unblock', {
-    user_id: userId,
+    target: userId,
   });
   return toApiResponse(response.data);
 }

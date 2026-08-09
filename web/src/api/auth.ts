@@ -17,9 +17,9 @@ export interface User {
 export interface AuthResponse {
   user: User;
   token: string;
-  exp: number;
+  exp: string;
   refresh_token?: string;
-  refresh_exp?: number;
+  refresh_exp?: string;
 }
 
 export interface RegisterRequest {

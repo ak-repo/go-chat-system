@@ -2,7 +2,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import wsClient from '../api/websocket';
-import type { ChatMessage, TypingData, ReadData, AckData } from '../api/websocket';
+import type { ChatMessage, TypingData, ReadData, AckData, WSMessage } from '../api/websocket';
 import { useAuth } from './AuthContext';
 import { getToken } from '../api/client';
 
@@ -11,10 +11,10 @@ interface SocketContextType {
   sendMessage: (receiverId: string, content: string) => void;
   sendTyping: (receiverId: string, isTyping: boolean) => void;
   sendReadReceipt: (receiverId: string, messageId: string) => void;
-  onMessage: (handler: (data: ChatMessage) => void) => () => void;
-  onTyping: (handler: (data: TypingData) => void) => () => void;
-  onRead: (handler: (data: ReadData) => void) => () => void;
-  onAck: (handler: (data: AckData) => void) => () => void;
+  onMessage: (handler: (message: WSMessage<ChatMessage>) => void) => () => void;
+  onTyping: (handler: (message: WSMessage<TypingData>) => void) => () => void;
+  onRead: (handler: (message: WSMessage<ReadData>) => void) => () => void;
+  onAck: (handler: (message: WSMessage<AckData>) => void) => () => void;
   reconnect: () => void;
 }
 
@@ -62,19 +62,19 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     wsClient.sendReadReceipt(receiverId, messageId);
   };
 
-  const onMessage = (handler: (data: ChatMessage) => void) => {
+  const onMessage = (handler: (message: WSMessage<ChatMessage>) => void) => {
     return wsClient.onMessage(handler);
   };
 
-  const onTyping = (handler: (data: TypingData) => void) => {
+  const onTyping = (handler: (message: WSMessage<TypingData>) => void) => {
     return wsClient.onTyping(handler);
   };
 
-  const onRead = (handler: (data: ReadData) => void) => {
+  const onRead = (handler: (message: WSMessage<ReadData>) => void) => {
     return wsClient.onRead(handler);
   };
 
-  const onAck = (handler: (data: AckData) => void) => {
+  const onAck = (handler: (message: WSMessage<AckData>) => void) => {
     return wsClient.onAck(handler);
   };
 

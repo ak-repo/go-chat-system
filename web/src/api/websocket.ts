@@ -43,7 +43,7 @@ class WSClient {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
-  private messageHandlers: Map<WSEventType, Set<(data: unknown) => void>> = new Map();
+  private messageHandlers: Map<WSEventType, Set<(message: WSMessage) => void>> = new Map();
   private isConnected = false;
   private shouldReconnect = true;
   private onStateChange: ((connected: boolean) => void) | null = null;
@@ -80,7 +80,7 @@ class WSClient {
         const message: WSMessage = JSON.parse(event.data);
         const handlers = this.messageHandlers.get(message.event);
         if (handlers) {
-          handlers.forEach((handler) => handler(message.data));
+          handlers.forEach((handler) => handler(message));
         }
       } catch (error) {
         console.error('Failed to parse WebSocket message:', error);
@@ -170,41 +170,41 @@ class WSClient {
   }
 
   // Register event handler
-  on(event: WSEventType, handler: (data: unknown) => void): () => void {
+  on<T = unknown>(event: WSEventType, handler: (message: WSMessage<T>) => void): () => void {
     if (!this.messageHandlers.has(event)) {
       this.messageHandlers.set(event, new Set());
     }
-    this.messageHandlers.get(event)!.add(handler);
+    this.messageHandlers.get(event)!.add(handler as (message: WSMessage) => void);
 
     // Return unsubscribe function
     return () => {
-      this.messageHandlers.get(event)?.delete(handler);
+      this.messageHandlers.get(event)?.delete(handler as (message: WSMessage) => void);
     };
   }
 
   // Register message handler
-  onMessage(handler: (data: ChatMessage) => void): () => void {
-    return this.on('message', handler as (data: unknown) => void);
+  onMessage(handler: (message: WSMessage<ChatMessage>) => void): () => void {
+    return this.on('message', handler);
   }
 
   // Register typing handler
-  onTyping(handler: (data: TypingData) => void): () => void {
-    return this.on('typing', handler as (data: unknown) => void);
+  onTyping(handler: (message: WSMessage<TypingData>) => void): () => void {
+    return this.on('typing', handler);
   }
 
   // Register read receipt handler
-  onRead(handler: (data: ReadData) => void): () => void {
-    return this.on('read', handler as (data: unknown) => void);
+  onRead(handler: (message: WSMessage<ReadData>) => void): () => void {
+    return this.on('read', handler);
   }
 
   // Register ack handler
-  onAck(handler: (data: AckData) => void): () => void {
-    return this.on('ack', handler as (data: unknown) => void);
+  onAck(handler: (message: WSMessage<AckData>) => void): () => void {
+    return this.on('ack', handler);
   }
 
   // Register error handler
-  onError(handler: (data: { message: string }) => void): () => void {
-    return this.on('error', handler as (data: unknown) => void);
+  onError(handler: (message: WSMessage<{ message: string }>) => void): () => void {
+    return this.on('error', handler);
   }
 
   // Check if connected

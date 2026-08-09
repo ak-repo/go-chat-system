@@ -22,8 +22,13 @@ export function getTokenExpiry(): number | null {
 }
 
 // Store tokens
-export function setToken(token: string, expiresIn: number): void {
-  const expiry = Date.now() + expiresIn * 1000;
+export function setToken(token: string, expiresAt: string): void {
+  const expiry = Date.parse(expiresAt);
+  if (Number.isNaN(expiry)) {
+    clearTokens();
+    return;
+  }
+
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
 }

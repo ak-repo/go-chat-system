@@ -43,7 +43,7 @@ func Init() *Container {
 	userService := service.NewUserServiceImpl(userRepo)
 	blockService := service.BlockServiceInit(blockRepo)
 	friendReqService := service.FriendRequestServiceInit(friendReqRepo, friendRepo, blockRepo)
-	messageService := service.NewMessageServiceImpl(messageRepo)
+	messageService := service.NewMessageServiceImpl(messageRepo, friendRepo, blockRepo)
 
 	return &Container{
 		FriendRepo:           friendRepo,

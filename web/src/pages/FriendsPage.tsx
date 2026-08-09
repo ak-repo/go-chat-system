@@ -91,7 +91,7 @@ export default function FriendsPage() {
 
   const handleAcceptRequest = async (request: FriendRequest) => {
     try {
-      await acceptFriendRequest(request.ID, request.ReceiverID);
+      await acceptFriendRequest(request.ID);
       loadData();
     } catch {
       alert('Failed to accept request');
@@ -100,7 +100,7 @@ export default function FriendsPage() {
 
   const handleRejectRequest = async (request: FriendRequest) => {
     try {
-      await rejectFriendRequest(request.ID, request.ReceiverID);
+      await rejectFriendRequest(request.ID);
       loadData();
     } catch {
       alert('Failed to reject request');

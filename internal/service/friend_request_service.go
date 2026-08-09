@@ -113,8 +113,7 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 func (s *FriendRequestServiceImpl) AcceptRequest(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
 
 	var body struct {
-		RequestID  string `json:"request_id"`
-		ReceiverID string `json:"received_id"`
+		RequestID string `json:"request_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -125,9 +124,12 @@ func (s *FriendRequestServiceImpl) AcceptRequest(w http.ResponseWriter, r *http.
 		return http.StatusBadRequest, nil, errs.ErrNotFound
 	}
 
-	//TODO: block check , already friend check etc!
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	if !ok || userID == "" {
+		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
+	}
 
-	if err := s.repo.AcceptRequest(r.Context(), body.RequestID, body.ReceiverID); err != nil {
+	if err := s.repo.AcceptRequest(r.Context(), body.RequestID, userID); err != nil {
 		return http.StatusInternalServerError, nil, errs.ErrDatabase
 	}
 
@@ -190,8 +192,7 @@ func (s *FriendRequestServiceImpl) GetAllRequests(w http.ResponseWriter, r *http
 
 func (s *FriendRequestServiceImpl) RejectRequest(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
 	var body struct {
-		RequestID  string `json:"request_id"`
-		ReceiverID string `json:"receiver_id"`
+		RequestID string `json:"request_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -202,12 +203,12 @@ func (s *FriendRequestServiceImpl) RejectRequest(w http.ResponseWriter, r *http.
 		return http.StatusBadRequest, nil, errs.ErrBadRequest
 	}
 
-	// userID, ok := r.Context().Value(middleware.UserIDKey).(string)
-	// if !ok || userID == "" {
-	// 	return http.StatusUnauthorized, nil, errs.ErrUnauthorized
-	// }
+	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
+	if !ok || userID == "" {
+		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
+	}
 
-	if err := s.repo.RejectRequest(r.Context(), body.RequestID, body.ReceiverID); err != nil {
+	if err := s.repo.RejectRequest(r.Context(), body.RequestID, userID); err != nil {
 		return http.StatusInternalServerError, nil, errs.ErrDatabase
 	}
 

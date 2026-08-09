@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/ak-repo/go-chat-system/internal/repository"
+	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
 	"github.com/ak-repo/go-chat-system/internal/transport/middleware"
 )
@@ -38,6 +39,9 @@ func (s *BlockServiceImpl) BlockUser(w http.ResponseWriter, r *http.Request) (in
 	if !ok || userID == "" {
 		return http.StatusUnauthorized, nil, errors.New("user id missing ")
 	}
+	if body.Target == "" {
+		return http.StatusBadRequest, nil, errs.ErrBadRequest
+	}
 
 	if userID == body.Target {
 		return http.StatusConflict, nil, errors.New("cannot block yourself")
@@ -63,6 +67,9 @@ func (s *BlockServiceImpl) UnblockUser(w http.ResponseWriter, r *http.Request) (
 	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok || userID == "" {
 		return http.StatusUnauthorized, nil, errors.New("user id missing")
+	}
+	if body.Target == "" {
+		return http.StatusBadRequest, nil, errs.ErrBadRequest
 	}
 
 	if err := s.repo.UnblockUser(r.Context(), userID, body.Target); err != nil {

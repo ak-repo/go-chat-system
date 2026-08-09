@@ -50,12 +50,15 @@ export default function ChatPage() {
 
   // Set up WebSocket listeners
   useEffect(() => {
-    const unsubscribeMessage = onMessage((data) => {
-      const msg = data as { message_id: string; content: string; timestamp: string };
+    const unsubscribeMessage = onMessage((message) => {
+      if (!userId || !user?.id) return;
+      if (message.sender_id !== userId || message.receiver_id !== user?.id) return;
+
+      const msg = message.data;
       const newMsg: Message = {
         id: msg.message_id,
-        sender_id: userId || '',
-        receiver_id: user?.id || '',
+        sender_id: message.sender_id,
+        receiver_id: message.receiver_id,
         content: msg.content,
         is_group: false,
         created_at: msg.timestamp,
@@ -66,9 +69,11 @@ export default function ChatPage() {
       });
     });
 
-    const unsubscribeTyping = onTyping((data) => {
-      const typing = data as { is_typing: boolean };
-      setPartnerTyping(typing.is_typing);
+    const unsubscribeTyping = onTyping((message) => {
+      if (!userId || !user?.id) return;
+      if (message.sender_id !== userId || message.receiver_id !== user?.id) return;
+
+      setPartnerTyping(message.data.is_typing);
     });
 
     return () => {
