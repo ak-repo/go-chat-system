@@ -2,6 +2,9 @@
 
 Backend-first real-time chat application.
 
+Canonical project and feature reference: docs/CODEBASE.md.
+Deployment/runtime reference: docs/DEPLOYMENT.md.
+
 ## Stack
 
 Backend:

@@ -20,7 +20,7 @@
 - PostgreSQL schema migrations managed by Goose.
 - Health checks for process liveness, PostgreSQL, and Redis.
 
-For the full implementation-based feature inventory, see [`docs/Features.md`](docs/Features.md).
+For the full implementation-based feature inventory and codebase guide, see [`docs/CODEBASE.md`](docs/CODEBASE.md).
 
 ## Project Structure
 
@@ -35,9 +35,8 @@ go-chat-system/
 │   └── config.yaml                    # Runtime configuration, ignored per environment when needed
 │
 ├── docs/
-│   ├── Features.md                    # Current feature inventory
-│   ├── DEPLOYMENT.md                  # Deployment notes
-│   └── ENGINEERING_REPORT_MVP.md      # Engineering report
+│   ├── CODEBASE.md                    # Canonical feature and codebase guide
+│   └── DEPLOYMENT.md                  # Deployment notes
 │
 ├── internal/
 │   ├── domain/

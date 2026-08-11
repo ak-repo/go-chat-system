@@ -1,85 +1,82 @@
-# Deployment Guide — go-chat-system MVP
+# Deployment Guide
 
-This document describes how to run and deploy the backend and frontend for production readiness.
+This document describes how to run and deploy `go-chat-system`. For project architecture, API contracts, implemented features, and current limitations, see `docs/CODEBASE.md`.
 
 ## Overview
 
-- **Backend:** Single Go binary (Chi HTTP API + WebSocket server). Requires PostgreSQL and Redis.
-- **Frontend:** React SPA (Vite); build to static assets and serve via any static host or the same origin as the API.
-- **Local development:** Docker Compose for Postgres and Redis; Makefile for migrate and run.
+- Backend: single Go binary serving Chi REST routes and WebSocket traffic. Requires PostgreSQL and Redis.
+- Frontend: React TypeScript Vite SPA built to static assets and served by a static host or reverse proxy.
+- Local development: root `docker-compose.yml` starts PostgreSQL and Redis only; Make targets run migrations, backend, and frontend.
 
 ## Prerequisites
 
-- Go 1.21+
-- Node 18+ (for frontend build)
-- PostgreSQL 14+
-- Redis 6+
-- (Optional) Docker and Docker Compose for local DB/Redis
+- Go
+- Node.js and npm for the frontend
+- PostgreSQL
+- Redis
+- Goose for migrations
+- `yq` for Makefile config parsing
+- Optional Docker and Docker Compose for local PostgreSQL/Redis
 
 ## Backend
 
 ### Build
 
 ```bash
-cd backend-go
 go build -o bin/server ./cmd/server
 ```
 
 ### Configuration
 
-- Primary config: `config/config.yaml`. Do **not** commit secrets; use environment variables in production.
-- Env overrides (applied after YAML):
+- Primary config: `config/config.yaml`. Use `config/config.example.yaml` as the reference shape. Do not commit secrets; use environment variables in production.
+- Supported environment overrides:
 
-  | Env var              | Overrides              |
-  |----------------------|------------------------|
-  | `DATABASE_HOST`      | `database.host`        |
-  | `DATABASE_PORT`      | `database.port`        |
-  | `DATABASE_USER`      | `database.user`        |
-  | `DATABASE_PASSWORD`  | `database.password`    |
-  | `DATABASE_NAME`      | `database.name`        |
-  | `SERVER_PORT`        | `server.port`          |
-  | `REDIS_HOST`         | `redis.host`           |
-  | `REDIS_PORT`         | `redis.port`           |
-  | `JWT_SECRET`         | `jwt.secret`           |
-  | `CORS_HOST`          | `CORS.host`            |
-  | `CORS_PORT`          | `CORS.port`            |
-  | `CORS_ALLOW_ORIGINS` | Comma-separated list   |
+| Env var | Overrides |
+| --- | --- |
+| `DB_HOST` | `database.host` |
+| `DB_PORT` | `database.port` |
+| `DB_USER` | `database.user` |
+| `DB_PASSWORD` | `database.password` |
+| `DB_NAME` | `database.name` |
+| `REDIS_HOST` | `redis.host` |
+| `REDIS_PORT` | `redis.port` |
+| `JWT_SECRET` | `jwt.secret` |
+| `PORT` | `server.port` |
 
-- For production: set `JWT_SECRET`, `DATABASE_PASSWORD`, and optionally `CORS_ALLOW_ORIGINS` (e.g. `https://app.example.com`).
+- For production, set `JWT_SECRET` and database/Redis credentials through the deployment environment or a secret manager. Configure CORS origins in config for the deployed frontend origin.
 
 ### Migrations
 
 ```bash
-cd backend-go
-# Ensure DB is reachable (config or env)
-goose -dir migrations postgres "user=... password=... dbname=... sslmode=... host=... port=..." up
-# Or use your Makefile target if it reads from config
 make migrate-up
 ```
+
+The Makefile builds the Goose DSN from `config/config.yaml` and requires `yq`.
 
 ### Run
 
 ```bash
 ./bin/server
 # Or with env:
-DATABASE_HOST=db.example.com JWT_SECRET=your-secret ./bin/server
+DB_HOST=db.example.com JWT_SECRET=your-secret ./bin/server
 ```
 
-- Listens on `SERVER_PORT` (default 8002). Serves HTTP + WebSocket on the same process.
+- The server listens on `PORT` if set, otherwise on `server.port` from config. REST and WebSocket traffic are served by the same process.
 
 ### Health endpoints (for orchestrators)
 
-- **Liveness:** `GET /live` — returns 200 if the process is up. Use for Kubernetes liveness probe.
-- **Readiness:** `GET /ready` — returns 200 only if PostgreSQL and Redis are reachable. Use for readiness probe.
-- Legacy: `GET /db-health`, `GET /redis-health` — still available.
+- Liveness: `GET /health/live` returns 200 if the process is up.
+- Readiness: `GET /health/ready` returns 200 only if PostgreSQL and Redis are reachable.
+- Legacy checks: `GET /db-health`, `GET /redis-health`.
 
 ## Frontend
 
 ### Build
 
 ```bash
-cd frontend-react
+cd web
 npm ci
+npm run lint
 npm run build
 ```
 
@@ -87,21 +84,20 @@ npm run build
 
 ### Configuration
 
-- API base URL and WebSocket URL are in `src/api/api.js` and `Chat.jsx` (e.g. `http://localhost:8002/api/v1`, `ws://localhost:8002/api/v1/ws`). For production, use env at build time (e.g. Vite `import.meta.env.VITE_API_URL`) or a config that matches your backend origin.
+- REST base URL is currently defined in `web/src/api/client.ts` as `http://localhost:8002/api/v1`.
+- WebSocket URL is derived in `web/src/api/websocket.ts` from the REST base URL and switches `http`/`https` to `ws`/`wss`.
+- For production, replace hard-coded development URLs with build-time environment configuration before deploying the frontend.
 
 ## Docker (optional)
 
-- Use `backend-go/docker-compose.yml` for local Postgres and Redis only. The app itself can be run on the host or in a separate container.
-- Example single-binary container (Dockerfile not in repo): multi-stage build with `go build -o /app/server ./cmd/server`, then run `/app/server` with env for DB and Redis.
+- Use root `docker-compose.yml` for local PostgreSQL and Redis only. The app itself can run on the host or in a separate container.
+- Example single-binary container approach: multi-stage build with `go build -o /app/server ./cmd/server`, then run `/app/server` with DB, Redis, and JWT configuration supplied by the environment.
 
 ## Production checklist
 
-1. Set `JWT_SECRET` and DB/Redis credentials via env; do not commit secrets.
-2. Set `CORS_ALLOW_ORIGINS` (and optionally `CORS_HOST`/`CORS_PORT`) to your frontend origin(s). WebSocket `CheckOrigin` uses the same list.
-3. Use `/live` and `/ready` for liveness and readiness probes.
-4. Prefer TLS in front of the app (reverse proxy); run the Go server behind Nginx/Caddy/Traefik.
-5. WebSocket: config `websocket.max_message_size`, `read_deadline_sec`, and `messages_per_sec` in YAML (or extend config for env override) to limit abuse.
-
----
-
-*End of deployment guide.*
+1. Set `JWT_SECRET` and database/Redis credentials through environment or secret manager; do not commit secrets.
+2. Configure CORS origins for the deployed frontend origin. WebSocket origin checks use the same CORS configuration path.
+3. Run Goose migrations before starting the new application version.
+4. Use `/health/live` and `/health/ready` for liveness and readiness probes.
+5. Prefer TLS in front of the app with a reverse proxy such as Nginx, Caddy, or Traefik.
+6. Remember WebSocket connection state is process-local; multiple backend instances need additional fan-out/presence design.
