@@ -11,6 +11,13 @@ import (
 
 var Logger *zap.Logger
 
+func L() *zap.Logger {
+	if Logger == nil {
+		return zap.NewNop()
+	}
+	return Logger
+}
+
 func Init() {
 	// level, format string
 	cfg := config.Config.Logging
@@ -34,7 +41,7 @@ func Init() {
 	encCfg.EncodeLevel = zapcore.LowercaseLevelEncoder
 
 	var encoder zapcore.Encoder
-	if cfg.Format == "console" {
+	if strings.ToLower(cfg.Format) == "console" {
 		encCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
 		encoder = zapcore.NewConsoleEncoder(encCfg)
 	} else {

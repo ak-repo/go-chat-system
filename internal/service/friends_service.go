@@ -1,11 +1,11 @@
 package service
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/ak-repo/go-chat-system/internal/repository"
+	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
 	"github.com/ak-repo/go-chat-system/internal/transport/middleware"
 )
@@ -27,7 +27,7 @@ func (s *FriendServiceImpl) ListFriends(w http.ResponseWriter, r *http.Request) 
 
 	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok || userID == "" {
-		return http.StatusUnauthorized, nil, errors.New("user id missing ")
+		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
 	}
 
 	limit := 20
@@ -46,7 +46,7 @@ func (s *FriendServiceImpl) ListFriends(w http.ResponseWriter, r *http.Request) 
 
 	data, err := s.friendRepo.ListFriends(r.Context(), userID, limit, offset)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendService.ListFriends", err)
 	}
 
 	responseData := map[string]any{

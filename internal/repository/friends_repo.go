@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ak-repo/go-chat-system/internal/domain/model"
+	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -29,7 +30,7 @@ func (r *FriendRepositoryImpl) CreateFriendship(ctx context.Context, a, b string
 		ON CONFLICT DO NOTHING
 	`, a, b)
 
-	return err
+	return errs.Wrap("repository.FriendRepository.CreateFriendship", err)
 }
 
 func (r *FriendRepositoryImpl) AreFriends(ctx context.Context, a, b string) (bool, error) {
@@ -41,7 +42,7 @@ func (r *FriendRepositoryImpl) AreFriends(ctx context.Context, a, b string) (boo
 		)
 	`, a, b).Scan(&exists)
 
-	return exists, err
+	return exists, errs.Wrap("repository.FriendRepository.AreFriends", err)
 }
 
 func (r *FriendRepositoryImpl) ListFriends(ctx context.Context, userID string, limit, offset int) (model.FriendsDTO, error) {
@@ -64,7 +65,7 @@ func (r *FriendRepositoryImpl) ListFriends(ctx context.Context, userID string, l
 		LIMIT $2 OFFSET $3
 	`, userID, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap("repository.FriendRepository.ListFriends", err)
 	}
 	defer rows.Close()
 
@@ -73,10 +74,10 @@ func (r *FriendRepositoryImpl) ListFriends(ctx context.Context, userID string, l
 	for rows.Next() {
 		var f model.FriendDTO
 		if err := rows.Scan(&f.UserID, &f.FriendID, &f.FriendName, &f.FriendEmail, &f.CreatedAt); err != nil {
-			return nil, err
+			return nil, errs.Wrap("repository.FriendRepository.ListFriends", err)
 		}
 		friends = append(friends, &f)
 	}
 
-	return friends, rows.Err()
+	return friends, errs.Wrap("repository.FriendRepository.ListFriends", rows.Err())
 }

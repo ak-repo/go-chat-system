@@ -45,7 +45,7 @@ func (s *UserServiceImpl) SearchUser(w http.ResponseWriter, r *http.Request) (in
 
 	respObj, err := s.userRepo.SearchUser(r.Context(), filter, limit)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.SearchUser", err)
 	}
 
 	responseData := map[string]any{
@@ -65,7 +65,7 @@ func (s *UserServiceImpl) Register(w http.ResponseWriter, r *http.Request) (int,
 	dec.DisallowUnknownFields()
 
 	if err := dec.Decode(&req); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.UserService.Register", err)
 	}
 
 	if !utils.Required(req.Username) ||
@@ -88,7 +88,7 @@ func (s *UserServiceImpl) Register(w http.ResponseWriter, r *http.Request) (int,
 	hash, err := utils.HashPassword(req.Password)
 	if err != nil {
 
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Register", err)
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -105,12 +105,12 @@ func (s *UserServiceImpl) Register(w http.ResponseWriter, r *http.Request) (int,
 	}
 
 	if err := s.userRepo.CreateUser(ctx, user); err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Register", err)
 	}
 
 	token, ttl, err := jwt.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Register", err)
 	}
 
 	responseData := map[string]any{
@@ -139,7 +139,7 @@ func (s *UserServiceImpl) Login(w http.ResponseWriter, r *http.Request) (int, *u
 	dec.DisallowUnknownFields()
 
 	if err := dec.Decode(&req); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.UserService.Login", err)
 	}
 
 	if !utils.Required(req.Email) || !utils.Required(req.Password) {
@@ -151,7 +151,7 @@ func (s *UserServiceImpl) Login(w http.ResponseWriter, r *http.Request) (int, *u
 
 	user, err := s.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Login", err)
 	}
 	if user == nil {
 		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
@@ -165,12 +165,12 @@ func (s *UserServiceImpl) Login(w http.ResponseWriter, r *http.Request) (int, *u
 
 	token, ttl, err := jwt.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Login", err)
 	}
 
 	refreshToken, refreshTTL, err := jwt.GenerateRefreshToken(user.ID)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Login", err)
 	}
 
 	responseData := map[string]any{
@@ -218,17 +218,20 @@ func (s *UserServiceImpl) RefreshToken(w http.ResponseWriter, r *http.Request) (
 
 	user, err := s.userRepo.GetByID(ctx, claims.UserID)
 	if err != nil || user == nil {
+		if err != nil {
+			return http.StatusUnauthorized, nil, errs.Wrap("service.UserService.RefreshToken", err)
+		}
 		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
 	}
 
 	token, ttl, err := jwt.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.RefreshToken", err)
 	}
 
 	refreshToken, refreshTTL, err := jwt.GenerateRefreshToken(user.ID)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.RefreshToken", err)
 	}
 
 	responseData := map[string]any{

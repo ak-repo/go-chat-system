@@ -6,7 +6,10 @@ import (
 	"net/http"
 
 	"github.com/ak-repo/go-chat-system/internal/shared/errs"
+	"github.com/ak-repo/go-chat-system/internal/shared/logger"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
+	"github.com/ak-repo/go-chat-system/internal/transport/middleware"
+	"go.uber.org/zap"
 )
 
 type WrappedFn func(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
@@ -25,6 +28,7 @@ func HTTPResponseWrapper(fn WrappedFn) http.HandlerFunc {
 		}
 
 		if err != nil {
+			logHandlerError(r, statusCode, err)
 			userMsg := getUserFriendlyMessage(err)
 			utils.ErrorResponse(w, userMsg, nil, statusCode)
 			return
@@ -32,6 +36,30 @@ func HTTPResponseWrapper(fn WrappedFn) http.HandlerFunc {
 
 		writeJSON(w, statusCode, obj)
 	}
+}
+
+func logHandlerError(r *http.Request, statusCode int, err error) {
+	requestID := middleware.GetRequestID(r.Context())
+	if requestID == "" {
+		requestID = "unknown"
+	}
+
+	fields := []zap.Field{
+		zap.String("request_id", requestID),
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.Int("status", statusCode),
+		zap.Error(err),
+	}
+
+	if trace := errs.Trace(err); len(trace) > 0 {
+		fields = append(fields, zap.Strings("trace", trace))
+	}
+	if userID, ok := r.Context().Value(middleware.UserIDKey).(string); ok && userID != "" {
+		fields = append(fields, zap.String("user_id", userID))
+	}
+
+	logger.L().Error("http handler error", fields...)
 }
 
 func getUserFriendlyMessage(err error) string {

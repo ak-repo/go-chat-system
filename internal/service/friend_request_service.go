@@ -43,7 +43,7 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.FriendRequestService.CreateRequest", err)
 	}
 
 	if body.To == "" {
@@ -62,7 +62,7 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 	// Already friends → reject
 	areFriend, err := s.friendRepo.AreFriends(r.Context(), userID, body.To)
 	if err != nil {
-		return http.StatusInternalServerError, nil, errs.ErrDatabase
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.CreateRequest", err)
 	}
 	if areFriend {
 		return http.StatusConflict, nil, errs.ErrAlreadyFriends
@@ -71,7 +71,7 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 	// Existing pending request (from → to)
 	exist, err := s.repo.GetPendingRequest(r.Context(), userID, body.To)
 	if err != nil {
-		return http.StatusInternalServerError, nil, errs.ErrInternal
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.CreateRequest", err)
 	}
 	if exist != nil {
 		return http.StatusConflict, nil, errs.ErrConflict
@@ -80,7 +80,7 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 	// Existing pending request (to → from)
 	reverse, err := s.repo.GetPendingRequest(r.Context(), body.To, userID)
 	if err != nil {
-		return http.StatusInternalServerError, nil, errs.ErrDatabase
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.CreateRequest", err)
 	}
 	if reverse != nil {
 		return http.StatusConflict, nil, errs.ErrConflict
@@ -89,7 +89,7 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 	//check blocking
 	blocked, err := s.blockRepo.IsBlocked(r.Context(), body.To, userID)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.CreateRequest", err)
 	}
 	if blocked {
 		return http.StatusForbidden, nil, errs.ErrBlockedRelationship
@@ -103,7 +103,7 @@ func (s *FriendRequestServiceImpl) CreateRequest(w http.ResponseWriter, r *http.
 		CreatedAt:  time.Now(),
 	}
 	if err := s.repo.CreateRequest(r.Context(), friendReq); err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.CreateRequest", err)
 	}
 
 	return http.StatusCreated, nil, nil
@@ -117,7 +117,7 @@ func (s *FriendRequestServiceImpl) AcceptRequest(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.FriendRequestService.AcceptRequest", err)
 	}
 
 	if body.RequestID == "" {
@@ -130,7 +130,7 @@ func (s *FriendRequestServiceImpl) AcceptRequest(w http.ResponseWriter, r *http.
 	}
 
 	if err := s.repo.AcceptRequest(r.Context(), body.RequestID, userID); err != nil {
-		return http.StatusInternalServerError, nil, errs.ErrDatabase
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.AcceptRequest", err)
 	}
 
 	return http.StatusOK, nil, nil
@@ -148,7 +148,7 @@ func (s *FriendRequestServiceImpl) GetPendingRequest(w http.ResponseWriter, r *h
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.FriendRequestService.GetPendingRequest", err)
 	}
 
 	if body.SenderID == "" {
@@ -157,7 +157,7 @@ func (s *FriendRequestServiceImpl) GetPendingRequest(w http.ResponseWriter, r *h
 
 	pending, err := s.repo.GetPendingRequest(r.Context(), body.SenderID, userID)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.GetPendingRequest", err)
 	}
 
 	if pending == nil {
@@ -179,7 +179,7 @@ func (s *FriendRequestServiceImpl) GetAllRequests(w http.ResponseWriter, r *http
 
 	data, err := s.repo.GetAllRequests(r.Context(), userID)
 	if err != nil {
-		return http.StatusInternalServerError, nil, errs.ErrDatabase
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.GetAllRequests", err)
 	}
 
 	respData := map[string]any{
@@ -196,7 +196,7 @@ func (s *FriendRequestServiceImpl) RejectRequest(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.FriendRequestService.RejectRequest", err)
 	}
 
 	if body.RequestID == "" {
@@ -209,7 +209,7 @@ func (s *FriendRequestServiceImpl) RejectRequest(w http.ResponseWriter, r *http.
 	}
 
 	if err := s.repo.RejectRequest(r.Context(), body.RequestID, userID); err != nil {
-		return http.StatusInternalServerError, nil, errs.ErrDatabase
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.RejectRequest", err)
 	}
 
 	return http.StatusOK, nil, nil
@@ -221,7 +221,7 @@ func (s *FriendRequestServiceImpl) CancelRequest(w http.ResponseWriter, r *http.
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.FriendRequestService.CancelRequest", err)
 	}
 
 	if body.RequestID == "" {
@@ -234,7 +234,7 @@ func (s *FriendRequestServiceImpl) CancelRequest(w http.ResponseWriter, r *http.
 	}
 
 	if err := s.repo.CancelRequest(r.Context(), body.RequestID, userID); err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.FriendRequestService.CancelRequest", err)
 	}
 
 	return http.StatusOK, nil, nil

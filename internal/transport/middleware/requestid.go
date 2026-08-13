@@ -14,8 +14,15 @@ const RequestIDKey contextKey = "request_id"
 
 func RequestID() Middleware {
 	return func(next http.Handler) http.Handler {
-		fn := middleware.RequestID(http.HandlerFunc(next.ServeHTTP))
-		return fn
+		return middleware.RequestID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reqID := middleware.GetReqID(r.Context())
+			if reqID == "" {
+				reqID = "unknown"
+			}
+
+			ctx := context.WithValue(r.Context(), RequestIDKey, reqID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		}))
 	}
 }
 

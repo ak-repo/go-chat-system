@@ -10,7 +10,6 @@ import (
 	"github.com/ak-repo/go-chat-system/internal/transport/websocket"
 	"github.com/ak-repo/go-chat-system/internal/transport/wrapper"
 	"github.com/go-chi/chi"
-	"github.com/go-chi/chi/middleware"
 )
 
 var GlobalHub *websocket.Hub
@@ -19,9 +18,9 @@ func Router() chi.Router {
 	r := chi.NewRouter()
 
 	// global middleware
-	r.Use(middleware.Logger)
-	r.Use(middleware.RequestID)
+	r.Use(mdware.RequestID())
 	r.Use(mdware.CORS())
+	r.Use(mdware.Logger())
 	r.Use(mdware.Recover())
 
 	// injector -> contains all services and repository

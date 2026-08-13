@@ -32,7 +32,7 @@ func (r *BlockRepositoryImpl) IsBlocked(ctx context.Context, a, b string) (bool,
 			   OR (blocker_id=$2 AND blocked_id=$1)
 		)
 	`, a, b).Scan(&exists)
-	return exists, err
+	return exists, errs.Wrap("repository.BlockRepository.IsBlocked", err)
 }
 
 func (r *BlockRepositoryImpl) BlockUser(ctx context.Context, blocker, target string) error {
@@ -42,7 +42,7 @@ func (r *BlockRepositoryImpl) BlockUser(ctx context.Context, blocker, target str
 
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.BlockRepository.BlockUser", err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -53,7 +53,7 @@ func (r *BlockRepositoryImpl) BlockUser(ctx context.Context, blocker, target str
 		ON CONFLICT DO NOTHING
 	`, blocker, target)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.BlockRepository.BlockUser", err)
 	}
 
 	// Remove friendships both ways
@@ -63,7 +63,7 @@ func (r *BlockRepositoryImpl) BlockUser(ctx context.Context, blocker, target str
 		   OR (user_id=$2 AND friend_id=$1)
 	`, blocker, target)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.BlockRepository.BlockUser", err)
 	}
 
 	// Update requests to blocked
@@ -74,10 +74,10 @@ func (r *BlockRepositoryImpl) BlockUser(ctx context.Context, blocker, target str
 		   OR (sender_id=$2 AND receiver_id=$1)
 	`, blocker, target)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.BlockRepository.BlockUser", err)
 	}
 
-	return tx.Commit(ctx)
+	return errs.Wrap("repository.BlockRepository.BlockUser", tx.Commit(ctx))
 }
 
 func (r *BlockRepositoryImpl) UnblockUser(ctx context.Context, blocker, target string) error {
@@ -86,7 +86,7 @@ func (r *BlockRepositoryImpl) UnblockUser(ctx context.Context, blocker, target s
 		WHERE blocker_id=$1 AND blocked_id=$2
 	`, blocker, target)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.BlockRepository.UnblockUser", err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return fmt.Errorf("block relationship not found")

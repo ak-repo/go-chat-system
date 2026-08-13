@@ -32,7 +32,7 @@ func Logger() Middleware {
 				reqID = "unknown"
 			}
 
-			logger.Logger.Info("http request",
+			logger.L().Info("http request",
 				zap.String("request_id", reqID),
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),

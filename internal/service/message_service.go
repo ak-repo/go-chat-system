@@ -44,7 +44,7 @@ func (s *MessageServiceImpl) CreateMessage(ctx context.Context, senderID, receiv
 
 		blocked, err := s.blockRepo.IsBlocked(ctx, senderID, receiverID)
 		if err != nil {
-			return nil, err
+			return nil, errs.Wrap("service.MessageService.CreateMessage", err)
 		}
 		if blocked {
 			return nil, errs.ErrBlockedRelationship
@@ -52,7 +52,7 @@ func (s *MessageServiceImpl) CreateMessage(ctx context.Context, senderID, receiv
 
 		areFriends, err := s.friendRepo.AreFriends(ctx, senderID, receiverID)
 		if err != nil {
-			return nil, err
+			return nil, errs.Wrap("service.MessageService.CreateMessage", err)
 		}
 		if !areFriends {
 			return nil, errs.ErrForbidden
@@ -71,7 +71,7 @@ func (s *MessageServiceImpl) CreateMessage(ctx context.Context, senderID, receiv
 	}
 
 	if err := s.messageRepo.CreateMessage(ctx, msg); err != nil {
-		return nil, err
+		return nil, errs.Wrap("service.MessageService.CreateMessage", err)
 	}
 	return msg, nil
 }
@@ -83,7 +83,11 @@ func (s *MessageServiceImpl) GetConversation(ctx context.Context, userID, otherU
 	if offset < 0 {
 		offset = 0
 	}
-	return s.messageRepo.GetMessagesBetweenUsers(ctx, userID, otherUserID, limit, offset)
+	messages, err := s.messageRepo.GetMessagesBetweenUsers(ctx, userID, otherUserID, limit, offset)
+	if err != nil {
+		return nil, errs.Wrap("service.MessageService.GetConversation", err)
+	}
+	return messages, nil
 }
 
 func (s *MessageServiceImpl) GetMessages(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
@@ -114,7 +118,7 @@ func (s *MessageServiceImpl) GetMessages(w http.ResponseWriter, r *http.Request)
 
 	messages, err := s.GetConversation(r.Context(), userID, otherUserID, limit, offset)
 	if err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.MessageService.GetMessages", err)
 	}
 	if messages == nil {
 		messages = model.Messages{}

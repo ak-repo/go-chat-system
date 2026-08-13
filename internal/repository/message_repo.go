@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ak-repo/go-chat-system/internal/domain/model"
+	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,7 +29,7 @@ func (r *MessageRepositoryImpl) CreateMessage(ctx context.Context, msg *model.Me
 		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`
 	_, err := r.db.Exec(ctx, q, msg.ID, msg.SenderID, msg.ReceiverID, msg.Body, msg.IsGroup, msg.CreatedAt, msg.ModifiedAt)
-	return err
+	return errs.Wrap("repository.MessageRepository.CreateMessage", err)
 }
 
 func (r *MessageRepositoryImpl) GetMessagesByReceiver(ctx context.Context, receiverID string, limit, offset int) (model.Messages, error) {
@@ -41,7 +42,7 @@ func (r *MessageRepositoryImpl) GetMessagesByReceiver(ctx context.Context, recei
 	`
 	rows, err := r.db.Query(ctx, query, receiverID, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap("repository.MessageRepository.GetMessagesByReceiver", err)
 	}
 	defer rows.Close()
 
@@ -49,11 +50,11 @@ func (r *MessageRepositoryImpl) GetMessagesByReceiver(ctx context.Context, recei
 	for rows.Next() {
 		var msg model.Message
 		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.ReceiverID, &msg.Body, &msg.IsGroup, &msg.CreatedAt, &msg.ModifiedAt); err != nil {
-			return nil, err
+			return nil, errs.Wrap("repository.MessageRepository.GetMessagesByReceiver", err)
 		}
 		messages = append(messages, &msg)
 	}
-	return messages, rows.Err()
+	return messages, errs.Wrap("repository.MessageRepository.GetMessagesByReceiver", rows.Err())
 }
 
 func (r *MessageRepositoryImpl) GetMessagesBetweenUsers(ctx context.Context, senderID, receiverID string, limit, offset int) (model.Messages, error) {
@@ -66,7 +67,7 @@ func (r *MessageRepositoryImpl) GetMessagesBetweenUsers(ctx context.Context, sen
 	`
 	rows, err := r.db.Query(ctx, query, senderID, receiverID, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap("repository.MessageRepository.GetMessagesBetweenUsers", err)
 	}
 	defer rows.Close()
 
@@ -74,9 +75,9 @@ func (r *MessageRepositoryImpl) GetMessagesBetweenUsers(ctx context.Context, sen
 	for rows.Next() {
 		var msg model.Message
 		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.ReceiverID, &msg.Body, &msg.IsGroup, &msg.CreatedAt, &msg.ModifiedAt); err != nil {
-			return nil, err
+			return nil, errs.Wrap("repository.MessageRepository.GetMessagesBetweenUsers", err)
 		}
 		messages = append(messages, &msg)
 	}
-	return messages, rows.Err()
+	return messages, errs.Wrap("repository.MessageRepository.GetMessagesBetweenUsers", rows.Err())
 }

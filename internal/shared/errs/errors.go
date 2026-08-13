@@ -34,12 +34,39 @@ var (
 // Error wrapping helpers (common patterns)
 //
 
-// Wrap adds context while preserving the original error for errors.Is / errors.As
+type OpError struct {
+	Op  string
+	Err error
+}
+
+func (e *OpError) Error() string {
+	return fmt.Sprintf("%s: %v", e.Op, e.Err)
+}
+
+func (e *OpError) Unwrap() error {
+	return e.Err
+}
+
+// Wrap adds context while preserving the original error for errors.Is / errors.As.
 func Wrap(op string, err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %w", op, err)
+	return &OpError{Op: op, Err: err}
+}
+
+// Trace returns operation names from outermost to innermost wrapped error.
+func Trace(err error) []string {
+	var trace []string
+	for err != nil {
+		var opErr *OpError
+		if !errors.As(err, &opErr) {
+			break
+		}
+		trace = append(trace, opErr.Op)
+		err = opErr.Unwrap()
+	}
+	return trace
 }
 
 // New creates a formatted error (use for internal-only errors, not domain errors)

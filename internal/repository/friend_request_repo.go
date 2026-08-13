@@ -43,7 +43,7 @@ func (r *FriendRequestRepositoryImpl) CreateRequest(ctx context.Context, req *mo
 			AND status='pending'
 		)
 	`, req.ID, req.SenderID, req.ReceiverID, req.Status, req.CreatedAt)
-	return err
+	return errs.Wrap("repository.FriendRequestRepository.CreateRequest", err)
 }
 
 func (r *FriendRequestRepositoryImpl) GetPendingRequest(
@@ -65,7 +65,7 @@ func (r *FriendRequestRepositoryImpl) GetPendingRequest(
 		return nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap("repository.FriendRequestRepository.GetPendingRequest", err)
 	}
 
 	return &fr, nil
@@ -77,7 +77,7 @@ func (r *FriendRequestRepositoryImpl) CancelRequest(ctx context.Context, request
 		WHERE id=$1 AND sender_id=$2 AND status='pending'
 	`, requestID, senderID)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.FriendRequestRepository.CancelRequest", err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return errs.ErrRequestNotFound
@@ -92,7 +92,7 @@ func (r *FriendRequestRepositoryImpl) RejectRequest(ctx context.Context, request
 		WHERE id=$1 AND receiver_id=$2 AND status='pending'
 	`, requestID, receiverID)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.FriendRequestRepository.RejectRequest", err)
 	}
 	if cmd.RowsAffected() == 0 {
 		return errs.ErrRequestNotFound
@@ -103,7 +103,7 @@ func (r *FriendRequestRepositoryImpl) RejectRequest(ctx context.Context, request
 func (r *FriendRequestRepositoryImpl) AcceptRequest(ctx context.Context, requestID, receiverID string) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.FriendRequestRepository.AcceptRequest", err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -121,7 +121,7 @@ func (r *FriendRequestRepositoryImpl) AcceptRequest(ctx context.Context, request
 		return errs.ErrRequestNotFound
 	}
 	if err != nil {
-		return err
+		return errs.Wrap("repository.FriendRequestRepository.AcceptRequest", err)
 	}
 
 	if receiver != receiverID {
@@ -135,7 +135,7 @@ func (r *FriendRequestRepositoryImpl) AcceptRequest(ctx context.Context, request
 		WHERE id=$1 AND status='pending'
 	`, requestID)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.FriendRequestRepository.AcceptRequest", err)
 	}
 
 	// Create mutual friendship (idempotent)
@@ -145,10 +145,10 @@ func (r *FriendRequestRepositoryImpl) AcceptRequest(ctx context.Context, request
 		ON CONFLICT DO NOTHING
 	`, sender, receiver)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.FriendRequestRepository.AcceptRequest", err)
 	}
 
-	return tx.Commit(ctx)
+	return errs.Wrap("repository.FriendRequestRepository.AcceptRequest", tx.Commit(ctx))
 }
 
 func (r *FriendRequestRepositoryImpl) GetAllRequests(ctx context.Context, userID string) (model.FriendRequestsDTO, error) {
@@ -168,7 +168,7 @@ func (r *FriendRequestRepositoryImpl) GetAllRequests(ctx context.Context, userID
 
 	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap("repository.FriendRequestRepository.GetAllRequests", err)
 	}
 	defer rows.Close()
 
@@ -185,10 +185,10 @@ func (r *FriendRequestRepositoryImpl) GetAllRequests(ctx context.Context, userID
 			&fr.FriendEmail,
 			&fr.CreatedAt,
 		); err != nil {
-			return nil, err
+			return nil, errs.Wrap("repository.FriendRequestRepository.GetAllRequests", err)
 		}
 		resp = append(resp, &fr)
 	}
 
-	return resp, rows.Err()
+	return resp, errs.Wrap("repository.FriendRequestRepository.GetAllRequests", rows.Err())
 }

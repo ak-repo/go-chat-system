@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ak-repo/go-chat-system/internal/domain/model"
+	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -32,7 +33,7 @@ func (r *UserRepositoryImpl) CreateUser(ctx context.Context, user *model.User) e
 	`
 	_, err := r.db.Exec(ctx, q, user.ID, user.Username, user.Email, user.PasswordHash, user.Role, user.CreatedAt, user.ModifiedAt)
 	if err != nil {
-		return err
+		return errs.Wrap("repository.UserRepository.CreateUser", err)
 	}
 
 	return nil
@@ -54,7 +55,7 @@ func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*mod
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
-		return nil, err
+		return nil, errs.Wrap("repository.UserRepository.GetByEmail", err)
 	}
 	return &user, nil
 }
@@ -75,7 +76,7 @@ func (r *UserRepositoryImpl) GetByID(ctx context.Context, id string) (*model.Use
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
-		return nil, err
+		return nil, errs.Wrap("repository.UserRepository.GetByID", err)
 	}
 	return &user, nil
 }
@@ -94,17 +95,17 @@ func (r *UserRepositoryImpl) SearchUser(ctx context.Context, filter string, limi
 	var resp model.UsersDTO
 	rows, err := r.db.Query(ctx, "SELECT id, username, email FROM users WHERE username ILIKE $1 OR email ILIKE $1 LIMIT $2", "%"+filter+"%", limit)
 	if err != nil {
-		return nil, err
+		return nil, errs.Wrap("repository.UserRepository.SearchUser", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		var user model.UserDTO
 		if err := rows.Scan(&user.ID, &user.Username, &user.Email); err != nil {
-			return nil, err
+			return nil, errs.Wrap("repository.UserRepository.SearchUser", err)
 		}
 		resp = append(resp, &user)
 	}
 
-	return resp, rows.Err()
+	return resp, errs.Wrap("repository.UserRepository.SearchUser", rows.Err())
 }

@@ -20,20 +20,21 @@ import (
 )
 
 func main() {
-	// Logger
-	logger.Init()
-
 	// Config
 	if err := config.Load(); err != nil {
 		log.Fatal("failed to load config :", err)
 	}
 
+	// Logger
+	logger.Init()
+	defer logger.Sync()
+
 	//database
 	if err := database.ConnectDB(); err != nil {
-		log.Fatal("failed to connect to database:", err)
+		logger.L().Fatal("failed to connect to database", zap.Error(err))
 	}
 	if err := database.InitRedis(); err != nil {
-		log.Fatal("failed to connect to Redis:", err)
+		logger.L().Fatal("failed to connect to Redis", zap.Error(err))
 	}
 
 	router := routes.Router()
@@ -50,7 +51,7 @@ func main() {
 	// start server
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal("HTTP serever error", zap.Error(err))
+			logger.L().Fatal("HTTP server error", zap.Error(err))
 		}
 
 	}()
@@ -59,20 +60,20 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down system....")
+	logger.L().Info("shutting down system")
 
 	// Stop WebSocket hub first
 	if routes.GlobalHub != nil {
 		routes.GlobalHub.Stop()
-		log.Println("WebSocket hub stopped")
+		logger.L().Info("WebSocket hub stopped")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Println("HTTP server shutdown error", zap.Error(err))
+		logger.L().Error("HTTP server shutdown error", zap.Error(err))
 	}
-	log.Println("Servers stopped")
+	logger.L().Info("servers stopped")
 
 }

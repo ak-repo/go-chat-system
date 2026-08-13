@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/ak-repo/go-chat-system/internal/repository"
@@ -32,23 +31,23 @@ func (s *BlockServiceImpl) BlockUser(w http.ResponseWriter, r *http.Request) (in
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.BlockService.BlockUser", err)
 	}
 
 	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok || userID == "" {
-		return http.StatusUnauthorized, nil, errors.New("user id missing ")
+		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
 	}
 	if body.Target == "" {
 		return http.StatusBadRequest, nil, errs.ErrBadRequest
 	}
 
 	if userID == body.Target {
-		return http.StatusConflict, nil, errors.New("cannot block yourself")
+		return http.StatusConflict, nil, errs.ErrSelfAction
 	}
 
 	if err := s.repo.BlockUser(r.Context(), userID, body.Target); err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.BlockService.BlockUser", err)
 	}
 
 	return http.StatusOK, nil, nil
@@ -61,19 +60,19 @@ func (s *BlockServiceImpl) UnblockUser(w http.ResponseWriter, r *http.Request) (
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return http.StatusBadRequest, nil, err
+		return http.StatusBadRequest, nil, errs.Wrap("service.BlockService.UnblockUser", err)
 	}
 
 	userID, ok := r.Context().Value(middleware.UserIDKey).(string)
 	if !ok || userID == "" {
-		return http.StatusUnauthorized, nil, errors.New("user id missing")
+		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
 	}
 	if body.Target == "" {
 		return http.StatusBadRequest, nil, errs.ErrBadRequest
 	}
 
 	if err := s.repo.UnblockUser(r.Context(), userID, body.Target); err != nil {
-		return http.StatusInternalServerError, nil, err
+		return http.StatusInternalServerError, nil, errs.Wrap("service.BlockService.UnblockUser", err)
 	}
 	return http.StatusOK, nil, nil
 }
