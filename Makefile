@@ -78,6 +78,14 @@ migrate-status: check ## Show migration status
 	goose -dir migrations postgres "$(DB_DSN)" status
 
 # ==============================
+# Database seeds
+# ==============================
+.PHONY: seed
+seed: check ## Seed demo users and friendship
+	@command -v psql >/dev/null 2>&1 || { echo "❌ psql not installed"; exit 1; }
+	psql "$(DB_DSN)" -v ON_ERROR_STOP=1 -f migrations/seeds/seed_demo_users.sql
+
+# ==============================
 # Docker
 # ==============================
 .PHONY: docker-up
