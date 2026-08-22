@@ -1,359 +1,327 @@
-# go-chat-system Codebase Guide
+# go-chat-system: Current Codebase Guide
 
-This is the canonical project and codebase reference for humans and agents planning or implementing features. Source code, migrations, configuration, and tests are the source of truth; older documentation should not override what is implemented.
+This document describes the repository as it exists in source code, migrations,
+configuration, and tests. Source code is authoritative over older plans or
+documentation. Feature status is explicitly classified as **implemented**,
+**partial**, **scaffolded**, or **missing**.
 
-## Project Overview
+## 1. Project overview
 
-`go-chat-system` is a backend-first real-time chat application. It provides authentication, friendship workflows, blocking, direct messaging, message history, and authenticated WebSocket delivery.
+`go-chat-system` is a Go backend with a React/TypeScript single-page frontend.
+The implemented product path is registration/login, authenticated user search,
+friend requests and friendships, blocking, direct message history, and direct
+real-time messaging over authenticated WebSockets.
 
-The backend owns the core business rules and persistence. The frontend is a React TypeScript SPA that talks to the backend through REST and WebSocket APIs.
-
-The main backend dependency direction is:
+The normal backend dependency direction is:
 
 ```text
-HTTP / WebSocket transport
-  -> service layer
-  -> repository layer
-  -> PostgreSQL / Redis
+HTTP/WebSocket transport -> service -> repository -> PostgreSQL/Redis
 ```
 
-Do not bypass this layering for feature work unless there is an explicit architectural reason.
+The server does not run migrations automatically. The frontend is a separate
+Vite application and is not embedded in the Go binary.
 
-## Technology Stack
+## 2. Technology stack
 
-- Backend: Go, Chi, pgx/pgxpool, PostgreSQL, Redis, Gorilla WebSocket, Viper, zap, JWT, bcrypt.
-- Database migrations: Goose SQL migrations in `migrations/`.
-- Frontend: React, TypeScript, Vite, React Router, Axios.
-- Local runtime support: `docker-compose.yml` starts PostgreSQL and Redis only.
+### Backend
 
-## Repository Structure
+- Go (`go.mod` declares Go 1.25.5)
+- Chi router
+- pgx/pgxpool for PostgreSQL
+- Redis (`go-redis/v9`) for rate limiting and health checks
+- Gorilla WebSocket
+- Goose SQL migrations
+- Viper/YAML configuration
+- HS256 JWTs (`golang-jwt/jwt/v4`)
+- bcrypt password hashing
+- zap logging
+
+### Frontend
+
+- React 19, TypeScript, and Vite
+- React Router
+- Axios
+- Tailwind CSS Vite integration
+
+### Local infrastructure
+
+`docker-compose.yml` defines PostgreSQL 16 and Redis 7 only. It does not build
+or run the application or frontend.
+
+## 3. Repository structure
 
 ```text
-cmd/server/main.go                    application startup and graceful shutdown
-config/                               runtime config and example config
-internal/domain/model/                domain/data transfer structs
-internal/platform/config/             Viper config loading and env overrides
-internal/platform/database/           PostgreSQL and Redis clients
-internal/repository/                  SQL persistence code
-internal/service/                     business logic and HTTP service methods
-internal/shared/                      errors, JWT, logger, helpers, utilities
+cmd/server/main.go                    startup and graceful shutdown
+config/                               runtime YAML and example YAML
+internal/domain/model/                domain and DTO structs
+internal/platform/config/             Viper loader and env overrides
+internal/platform/database/           PostgreSQL pool and Redis client
+internal/repository/                  PostgreSQL queries and transactions
+internal/service/                     validation, policy, orchestration
+internal/shared/                      JWT, errors, logging, helpers, utilities
 internal/transport/injector/          manual dependency wiring
-internal/transport/middleware/        auth, CORS, recovery, rate limiting
+internal/transport/middleware/        auth, CORS, logging, recovery, limits
 internal/transport/routes/            Chi route registration
-internal/transport/websocket/         hub, client pumps, message envelope, room scaffold
-internal/transport/wrapper/           REST response wrapper and WS upgrade handler
-migrations/                           Goose PostgreSQL migrations
-web/src/api/                          frontend REST and WebSocket clients
-web/src/context/                      auth and socket context providers
-web/src/pages/                        login, register, friends, chat pages
-docs/                                 codebase and deployment documentation
+internal/transport/websocket/         hub, clients, rooms, WS envelope
+internal/transport/wrapper/           REST response and WS upgrade wrappers
+migrations/                           Goose schema and demo seed
+web/src/api/                          REST and WebSocket client layer
+web/src/context/                      auth and socket lifecycle state
+web/src/pages/                        login, register, friends, chat UI
+docs/                                 repository and deployment documentation
+plans/                                planning documents; not runtime behavior
 ```
 
-## Backend Architecture
+## 4. Backend architecture
 
-Startup in `cmd/server/main.go`:
+`cmd/server/main.go` loads configuration, initializes zap logging, connects to
+PostgreSQL and Redis, constructs the Chi router, and starts one `http.Server`.
+SIGINT/SIGTERM stops the in-memory WebSocket hub first and then performs a
+10-second HTTP graceful shutdown.
 
-1. Initializes logging.
-2. Loads YAML configuration and environment overrides.
-3. Connects to PostgreSQL and Redis.
-4. Builds the Chi router.
-5. Starts the HTTP server on `config.Config.Server.Port`.
-6. On shutdown, stops the WebSocket hub if it exists and shuts down HTTP gracefully.
+`internal/transport/injector/injector.go` is the composition root. It creates
+the five repositories and five services and passes them to the route layer.
 
-Dependency wiring is manual in `internal/transport/injector/injector.go`:
+Transport owns parsing, authentication context, routing, WebSocket framing,
+and serialization. Services own business rules. Repositories own SQL,
+transactions, and scans. The global router middleware adds request IDs, CORS,
+logging, panic recovery, JWT authentication on protected routes, and Redis
+rate limits.
 
-- Repositories are created from the PostgreSQL pool.
-- Services are created from repositories.
-- Routes expose service methods through `wrapper.HTTPResponseWrapper`.
+The REST wrapper returns `{"status":"ok","data":...}` for data responses,
+`{"message":"ok"}` for successful nil responses, and
+`{"status":"error","message":"..."}` for handled errors.
 
-Routing and middleware live in `internal/transport/routes/routes.go`:
+## 5. Frontend architecture
 
-- Public auth routes use Redis IP rate limiting.
-- Protected routes use JWT auth and Redis user rate limiting.
-- Health routes are registered outside `/api/v1`.
+- `web/src/api/client.ts` owns the Axios client, bearer-token injection,
+  localStorage token storage, and one-at-a-time 401 refresh queuing.
+- `web/src/api/auth.ts`, `users.ts`, `friends.ts`, and `messages.ts` wrap REST
+  contracts and normalize the backend response envelope.
+- `web/src/api/websocket.ts` owns the singleton WebSocket, event dispatch,
+  sending, and bounded exponential reconnects.
+- `AuthContext` owns the current user and login/register/logout state.
+- `SocketContext` connects the socket while authenticated and exposes socket
+  actions/listeners to pages.
+- `App.tsx` routes `/login`, `/register`, `/friends`, and `/chat/:userId` and
+  applies public/protected route guards.
+- `FriendsPage` implements friend listing, incoming requests, and user search.
+- `ChatPage` loads history, displays direct messages, sends messages, and
+  displays typing state.
 
-Transport code should stay thin. Business rules belong in `internal/service/`. SQL belongs in `internal/repository/`.
+The frontend REST base URL is currently hard-coded to
+`http://localhost:8002/api/v1` in `web/src/api/client.ts`.
 
-## Frontend Architecture
+## 6. Database structure
 
-The React app lives under `web/`.
+The only Goose migration is
+`migrations/20260126104003_initial_schema.sql`.
 
-- `web/src/App.tsx` defines `/login`, `/register`, `/friends`, and `/chat/:userId` routes.
-- `web/src/context/AuthContext.tsx` owns auth state and token persistence through API helpers.
-- `web/src/context/SocketContext.tsx` connects and disconnects the singleton WebSocket client based on auth state.
-- `web/src/api/client.ts` creates the Axios REST client with base URL `http://localhost:8002/api/v1`, bearer token injection, and 401 refresh handling.
-- `web/src/api/websocket.ts` creates a singleton WebSocket client from `BASE_URL`, adds the token query parameter, reconnects with exponential backoff, and exposes event handlers.
-- Page code should call API/socket abstractions instead of embedding transport logic directly.
+| Table | Current purpose |
+| --- | --- |
+| `users` | UUID identity, username, unique email, bcrypt hash, role, timestamps, `deleted_at`. |
+| `friends` | Directed rows; mutual friendship is two rows. Composite primary key and no-self constraint. |
+| `blocks` | Directed blocker/blocked rows with composite primary key and no-self constraint. |
+| `friend_requests` | Sender, receiver, UUID, status (`pending`, `accepted`, `rejected`, `blocked`), timestamps. |
+| `messages` | Sender, receiver, body, `is_group`, timestamps, and `deleted_at`. |
 
-## Database Architecture
+Foreign keys cascade user deletion for relationship tables. Indexes cover user
+email, friend/block lookup, pending request receiver, and message sender or
+receiver by creation time. The seed file contains demo data.
 
-The current schema is defined by Goose migrations under `migrations/`.
+The schema has soft-delete columns, but current repositories mostly hard-delete
+or omit `deleted_at` filtering. `messages.is_group` is present, but there are
+no group or membership tables.
 
-Current tables:
+## 7. Authentication
 
-- `users`: UUID primary key, username, unique email, password hash, role, timestamps, soft-delete column.
-- `friends`: directed rows `(user_id, friend_id)`; mutual friendship is represented as two rows; self-friend check exists.
-- `blocks`: directed block rows `(blocker_id, blocked_id)`; blocking removes friendships and marks related friend requests blocked.
-- `friend_requests`: sender, receiver, status, timestamps. The migration allows `pending`, `accepted`, and `blocked`.
-- `messages`: sender, receiver, body, `is_group`, timestamps, soft-delete column.
+Registration validates required fields, email format, and an eight-character
+minimum password, hashes with bcrypt, creates a user, and returns an access
+JWT. Login verifies the hash and returns access and refresh JWTs. Refresh
+validates the refresh JWT and reloads the user before issuing both tokens.
 
-Indexes exist for user email lookup, friend lookup, block lookup, pending request lookup, and message sender/receiver timestamp queries.
+Access claims contain user ID, email, role, issuer, issue time, and expiry.
+Refresh claims contain user ID, issuer, issue time, and expiry. Protected
+routes accept, in order, `Authorization: Bearer`, `?token=`, or the `access`
+cookie. The validated user ID is stored in request context.
 
-## Authentication Flow
+The WebSocket path uses the same middleware. `Client.ReadPump` overwrites any
+client-supplied `sender_id` with the authenticated context identity.
 
-Implemented behavior:
+**Partial/limitations:** refresh tokens are stateless and cannot be revoked;
+there is no logout endpoint or server-side token store; browser tokens and the
+stored user are kept in localStorage; registration does not return a refresh
+token, unlike login and refresh.
 
-- Passwords are hashed with bcrypt.
-- Access tokens are HS256 JWTs containing user ID, email, role, expiry, issue time, and issuer.
-- Refresh tokens are HS256 JWTs containing user ID and issuer.
-- `AuthMiddleware` accepts tokens from `Authorization: Bearer ...`, `?token=...`, or an `access` cookie.
-- WebSocket authentication uses the same middleware path; frontend currently passes the token as a query parameter.
-- The authenticated user ID is stored in request context as `middleware.UserIDKey`.
+## 8. REST APIs
 
-Known limitations:
+All API routes below are prefixed with `/api/v1`. Protected routes require the
+access JWT. Successful nil responses are encoded as `{"message":"ok"}`.
 
-- Refresh tokens are stateless; there is no server-side storage, rotation tracking, revocation list, or logout invalidation.
-- Register returns an access token but not a refresh token. Login and refresh return refresh tokens.
+### Public authentication
 
-## REST API
+| Method/path | Body | Success |
+| --- | --- | --- |
+| `POST /auth/register` | `username`, `email`, `password` | `201`; user, access `token`, `exp` |
+| `POST /auth/login` | `email`, `password` | `200`; user, access/refresh tokens and expiries |
+| `POST /auth/refresh` | `refresh_token` | `200`; new access/refresh tokens and expiries |
 
-All API routes are under `/api/v1`.
+### Protected application routes
 
-Public auth routes:
+| Method/path | Body/query | Behavior |
+| --- | --- | --- |
+| `GET /users` | `filter`, `limit` (default 20, max 100) | Username/email search; filters shorter than two characters return empty. |
+| `GET /friends` | `limit` (20/100), `offset` (0+) | Lists the authenticated user's friends. |
+| `GET /friend-requests/` | none | Lists requests received by the authenticated user. |
+| `POST /friend-requests/` | `{to}` | Creates a pending request after self, duplicate, friendship, and block checks. |
+| `POST /friend-requests/accept` | `{request_id}` | Receiver-only acceptance; transaction creates mutual friendship. |
+| `POST /friend-requests/reject` | `{request_id}` | Receiver-only rejection. |
+| `POST /friend-requests/cancel` | `{request_id}` | Sender-only deletion of a pending request. |
+| `POST /blocks/` | `{target}` | Creates a block, removes friendship rows, marks related requests blocked. |
+| `POST /blocks/unblock` | `{target}` | Removes the authenticated user's block row. |
+| `GET /messages` | `user_id`; `limit` (50/100), `offset` (0+) | Returns direct conversation history, newest-first from SQL. |
+| `GET /ws` | authenticated upgrade | Opens a WebSocket connection. |
 
-| Method | Path | Body | Response |
-| --- | --- | --- | --- |
-| `POST` | `/auth/register` | `{username,email,password}` | `201` with `user`, `token`, `exp` |
-| `POST` | `/auth/login` | `{email,password}` | `200` with `user`, `token`, `exp`, `refresh_token`, `refresh_exp` |
-| `POST` | `/auth/refresh` | `{refresh_token}` | `200` with new `token`, `exp`, `refresh_token`, `refresh_exp` |
+Message sending checks friendship and block status in the service. History
+reads currently do not repeat those checks. API errors are mostly stable only
+by HTTP status and human-readable message; there are no public error codes.
 
-Protected routes require JWT auth:
+Health routes outside the API namespace are `GET /health/live`,
+`GET /health/ready`, `GET /redis-health`, and `GET /db-health`.
 
-| Method | Path | Parameters / body | Implemented behavior |
-| --- | --- | --- | --- |
-| `GET` | `/users` | query `filter`, optional `limit` | Searches username/email with minimum filter length of 2. |
-| `GET` | `/friends` | optional `limit`, `offset` | Lists authenticated user's friends. |
-| `GET` | `/friend-requests/` | none | Lists incoming friend requests. |
-| `POST` | `/friend-requests/` | `{to}` | Creates pending friend request after self/friend/duplicate/block checks. |
-| `POST` | `/friend-requests/accept` | `{request_id, received_id}` | Accepts request and creates mutual friendship. |
-| `POST` | `/friend-requests/cancel` | `{request_id}` | Cancels authenticated sender's pending request. |
-| `POST` | `/friend-requests/reject` | `{request_id, receiver_id}` | Attempts to reject a request. |
-| `POST` | `/blocks/` | `{target}` | Blocks target user, deletes friendship, marks requests blocked. |
-| `POST` | `/blocks/unblock` | `{target}` | Deletes block relationship. |
-| `GET` | `/messages` | `user_id`, optional `limit`, `offset` | Returns conversation between authenticated user and `user_id`, ordered newest first. |
-| `GET` | `/ws` | auth by header/cookie/query | Upgrades to WebSocket. |
+## 9. WebSocket architecture
 
-Response wrapper:
+The endpoint is `GET /api/v1/ws`. The upgrade handler validates the authenticated
+context and allowed origin, then creates a client with a 256-item send queue.
+Each client has a read pump and a write pump. The hub stores multiple active
+connections per user in memory.
 
-- Success with data: `{"status":"ok","data":...}`.
-- Success without data: `{"message":"ok"}`.
-- Error: `{"status":"error","message":"..."}`.
-
-Health routes outside `/api/v1`:
-
-- `GET /health/live`
-- `GET /health/ready`
-- `GET /redis-health`
-- `GET /db-health`
-
-## WebSocket Architecture
-
-Implemented files:
-
-- `internal/transport/wrapper/ws_handler.go`: authenticated upgrade handler and origin check.
-- `internal/transport/websocket/client.go`: read/write pumps, ping, deadlines, message size limit, per-connection message rate limit.
-- `internal/transport/websocket/hub.go`: in-memory user connection registry and routing.
-- `internal/transport/websocket/ws_message.go`: message envelope.
-- `web/src/api/websocket.ts`: frontend singleton WebSocket client.
-
-Wire envelope:
+Envelope:
 
 ```json
-{
-  "event": "message",
-  "sender_id": "server-injected",
-  "receiver_id": "target-user-id",
-  "receiver_type": "user",
-  "data": {}
-}
+{"event":"message","sender_id":"server-set","receiver_id":"user-id","receiver_type":"user","data":{}}
 ```
 
-Important behavior:
+For `message` to a user, the hub accepts `data.text` or `data.content`, calls
+`MessageService.CreateMessage`, persists first, sends the persisted message to
+all active receiver connections, and sends `{message_id,status:"sent"}` ack to
+the sender. Persistence or malformed payload failures send an `error` event
+to the sender. Direct messages require friendship and no block.
 
-- Sender identity is overwritten from authenticated context in the WebSocket read path; client-supplied `sender_id` is not trusted.
-- Multiple connections per user are supported in memory.
-- Presence events `user_online` and `user_offline` are broadcast when first connection opens or last connection closes.
-- Any event with `receiver_type: "user"` is routed to active connections for `receiver_id`.
-- For user-targeted messages, the hub asynchronously extracts `data.text` or `data.content` and persists a message through `MessageService.CreateMessage`.
+The server also routes generic user-targeted events. The frontend defines
+`message`, `typing`, `read`, `ack`, and `error`; typing and read are currently
+ephemeral generic routing only. The hub broadcasts `user_online` on a user's
+first connection and `user_offline` after its last connection closes, but the
+frontend does not consume these presence events.
 
-Partial/scaffolded behavior:
+Connection controls are a 10 KB read limit, 60-second read deadline refreshed
+by pong, 10-second write deadline, 30-second ping, 10 inbound messages per
+second, and removal of clients whose send queue is full. The frontend retries
+up to five times with exponential delays starting at one second.
 
-- Group routing types and room code exist, but no REST API, database schema, frontend group UI, or room initialization is implemented.
-- Typing and read events are routed as transient events but are not persisted and have no backend-specific validation.
-- There is no server acknowledgement for persisted messages and no error event on persistence failure.
-- Realtime routing is process-local only; Redis is not used for WebSocket fan-out.
+**Scaffolded:** `ReceiverType: group`, `Room`, `CreateRoom`, and group routing
+exist in memory. There are no group routes, persistence, membership service, or
+group UI. The hub is process-local; Redis is not used for WebSocket fan-out.
 
-## Implemented Features
+## 10. Currently implemented features
 
-Implemented end-to-end or with a complete backend path:
+- Registration, login, password hashing, access validation, and refresh.
+- Protected REST API and Redis HTTP rate limiting (10/minute public auth,
+  120/minute protected user limit).
+- User search, friend requests, mutual friendships, friend listing, blocking,
+  and unblocking.
+- Direct message persistence and REST history retrieval.
+- Authenticated direct WebSocket delivery, sender identity protection,
+  persistence ack/error, presence broadcast, ping/pong, limits, and multiple
+  connections per user.
+- React login/register, friends/search/request, and direct chat screens.
+- PostgreSQL/Redis health checks and local Docker infrastructure.
 
-- User registration and login.
-- JWT-protected REST routes.
-- Stateless access-token refresh endpoint.
-- User search by username/email.
-- Friend request creation with duplicate, self, friend, and block checks.
-- Friend request acceptance creating mutual friendship.
-- Friend request cancellation by sender.
-- Friend listing.
-- Backend blocking/unblocking, including friendship removal and related friend-request updates.
-- Message persistence for direct user messages.
-- REST conversation history retrieval.
-- Authenticated WebSocket connection.
-- Server-injected WebSocket sender identity.
-- Direct user WebSocket delivery to currently connected receivers.
-- Multi-connection tracking per user in the WebSocket hub.
-- Online/offline presence broadcast.
-- Basic frontend flows for login, registration, friends, requests, search, and direct chat.
-- Redis-backed HTTP rate limiting and in-memory per-socket message rate limiting.
-- Health checks for process, PostgreSQL, and Redis readiness.
+## 11. Partial, scaffolded, and missing features
 
-## Partial / Scaffolded / Missing Features
+### Partial
 
-Partial:
+- Typing indicators route through the backend and display in direct chat, but
+  have no backend validation or persistence.
+- Read receipt types and send helpers exist, but chat does not use them and no
+  receipts are stored.
+- Presence is emitted by the hub but not represented in frontend state.
+- Chat uses optimistic client IDs while the server creates message IDs; ack
+  reconciliation and failed-send rollback are not implemented.
+- Soft delete is modeled but not consistently enforced.
+- Refresh lifecycle, localStorage token storage, and hard-coded frontend URL
+  are usable locally but incomplete for production.
 
-- Direct chat lacks persisted delivery acknowledgements, read receipt storage, message status, retry reconciliation, and strict ordering guarantees.
-- Frontend optimistic messages use a client-generated ID; persisted backend messages use a server-generated ID; there is no ack to reconcile them.
-- Friend request rejection is coded but conflicts with the database status constraint because the migration does not allow `rejected`.
-- Frontend block/unblock API functions may not match backend body shape and are not part of the current primary UI flow.
-- Frontend WebSocket types include `ack`, `typing`, and `read`; backend generically routes these events but only persists user-targeted events with text/content.
+### Scaffolded
 
-Scaffolded:
+- Group chat types, room registry, `is_group`, and group routing.
+- User role field and TODO marker for admin actions.
+- Database `deleted_at` fields and model fields without complete behavior.
 
-- Group chat routing structs/functions.
-- Admin actions comment in user service.
-- Soft-delete columns in database tables; application code does not consistently use soft delete.
+### Missing
 
-Missing:
+- Group management and membership persistence/UI.
+- Message edit/delete, durable delivery/read status, and offline notifications.
+- Password reset, email verification, profile/account management.
+- Server-side logout or refresh-token revocation.
+- Distributed WebSocket fan-out/presence for multiple backend instances.
+- Automated frontend tests, production application containers, and Kubernetes
+  manifests.
 
-- Group chat product flow, group tables, membership management, and group UI.
-- Message delete/edit APIs.
-- Read receipt persistence.
-- Delivery status persistence.
-- Offline delivery notifications beyond REST history.
-- Redis Pub/Sub or distributed WebSocket scaling.
-- Server-side refresh-token revocation/logout.
-- Automated frontend tests.
+## 12. Configuration
 
-## Configuration
+`internal/platform/config/config.go` reads `config.yaml` from the working
+directory or `./config/`, then applies non-empty overrides for `DB_HOST`,
+`DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `REDIS_HOST`, `REDIS_PORT`,
+`JWT_SECRET`, and `PORT`.
 
-Config is loaded by `internal/platform/config/config.go` from `config.yaml` in `.` or `./config`.
+Configuration sections are `database`, `jwt`, `server`, `CORS`, `logging`, and
+`redis`. `config/config.example.yaml` documents local defaults. Pool duration
+fields are declared, but the current PostgreSQL setup applies fixed lifetime
+and idle values instead. Do not expose `config/config.yaml` secrets.
 
-Supported environment overrides:
+HTTP CORS and WebSocket origin checks use configured `CORS.allowed_origins`, or
+default to `http://<CORS.host>:<CORS.port>`.
 
-- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
-- `REDIS_HOST`, `REDIS_PORT`
-- `JWT_SECRET`
-- `PORT`
+## 13. Tests and verification
 
-Main config sections:
+Current Go tests cover message service authorization/persistence behavior,
+friend-request authenticated-actor behavior, WebSocket message parsing and
+delivery/ack/error behavior, JWT refresh validation, response wrappers, error
+helpers, and recovery middleware. There are no frontend tests in `web`.
 
-- `database`: host, port, user, password, name, sslmode, pool settings.
-- `jwt`: secret, expiry, issuer, refresh_expiry.
-- `server`: host, port.
-- `CORS`: host, port, allowed_origins.
-- `redis`: host, port, password, db.
-- `logging`: level, format, output.
-
-Important notes:
-
-- Do not expose or commit local secrets from `config/config.yaml`.
-- `config/config.example.yaml` is the reference shape for local configuration.
-- PostgreSQL pool duration fields exist in config structs; verify current database setup before assuming every field is applied.
-
-## Development Workflow
-
-Local infrastructure:
-
-```bash
-make docker-up
-```
-
-Apply migrations:
-
-```bash
-make migrate-up
-```
-
-Run backend:
-
-```bash
-make run
-```
-
-Run frontend:
-
-```bash
-make web-run
-```
-
-Build backend:
-
-```bash
-make build
-```
-
-The Makefile expects `config/config.yaml`, `go`, `yq`, and `goose` for targets that depend on `make check`.
-
-## Testing And Verification
-
-Backend verification before completing backend changes:
+Repository verification commands are:
 
 ```bash
 go fmt ./...
 go vet ./...
 go test ./...
+cd web && npm run lint && npm run build
 ```
 
-Frontend verification before completing frontend changes:
+## 14. Deployment and runtime structure
 
-```bash
-cd web
-npm run lint
-npm run build
-```
+The runtime is one Go process serving REST and WebSocket traffic, plus external
+PostgreSQL and Redis. `docker-compose.yml` maps PostgreSQL to host port 5433
+and Redis to host port 6380, with named data volumes. Goose runs migrations
+separately through Makefile targets. The frontend is run by Vite in development
+or built to `web/dist` for a static host/reverse proxy.
 
-Current Go tests include message service behavior, WebSocket message text extraction, and JWT refresh token generation/validation.
+Useful targets include `make docker-up`, `make migrate-up`, `make run`,
+`make web-run`, `make build`, and `make migrate-status`. The repository has no
+production Dockerfile for the application or frontend.
 
-There is no frontend test suite in `web/package.json`; available frontend checks are lint and build.
+## 15. Current limitations
 
-## Deployment Architecture
+- WebSocket state and delivery are single-process only.
+- Message history is offset-paginated and SQL-ordered newest-first; the UI
+  re-sorts it chronologically.
+- No startup migration runner, durable event status, or offline delivery.
+- Some frontend/backend contract edges remain incomplete, especially optimistic
+  message reconciliation and optional event handling.
+- Error responses lack machine-readable codes.
+- Soft-delete semantics are incomplete.
+- Browser tokens are stored in localStorage and refresh tokens are revocable
+  only by changing the signing secret.
 
-See `docs/DEPLOYMENT.md` for deployment commands and production checklist.
-
-Runtime shape:
-
-- One Go binary serves REST and WebSocket traffic.
-- PostgreSQL and Redis are external runtime dependencies.
-- Goose migrations are run separately; the server does not run migrations automatically.
-- The Vite frontend is built and served as static assets separately from the Go process unless a deployment adds a reverse proxy/static file layer.
-- WebSocket connection state is in memory inside one Go process.
-
-## Current Limitations
-
-- No automatic migration runner in application startup.
-- WebSocket persistence is asynchronous and failures are only logged; clients are not told persistence failed.
-- WebSocket hub has no distributed fan-out; multiple backend instances would not share connected users.
-- Direct-message REST history is ordered newest first; frontend behavior should account for that ordering.
-- No authorization check verifies users are friends before messaging.
-- No block check is performed before direct message persistence/routing.
-- Error semantics are mostly human-readable messages, not stable machine codes.
-- Some frontend/backend contract drift exists for token expiry, block API bodies, and friend request rejection status.
-
-## Important Implementation Rules
-
-- Keep handlers thin.
-- Put business rules in `internal/service/`.
-- Put SQL in `internal/repository/`.
-- Never trust `sender_id` from WebSocket clients; sender identity must come from authenticated context.
-- Create new Goose migrations for database changes; do not edit already-deployed migrations.
-- Keep frontend API calls under `web/src/api/` and socket transport behavior out of UI components.
+For deployment-specific commands and checklist, see `docs/DEPLOYMENT.md`.
