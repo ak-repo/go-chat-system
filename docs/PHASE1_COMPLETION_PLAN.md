@@ -438,6 +438,35 @@ secrets.
   fan-out, durable event processing, or presence storage.
 - The frontend REST base URL is hard-coded to localhost.
 
+### Review follow-ups recorded 2026-08-23 (post-implementation review)
+
+Fixed in this change set:
+
+- `CreateReply` now re-runs the block and friendship gate; blocking is
+  effective for replies in conversations with history.
+- Delivery-state join no longer filters by the requesting user, so sent
+  messages can surface delivered/read timestamps.
+- Empty `last_message_id` ("mark all read") stores NULL instead of failing
+  the uuid cast.
+- Malformed UUID path segments now return 400 at the service boundary
+  (`chiURLUUIDParam`) instead of SQL cast errors (500).
+
+Deferred follow-ups (do not lose these):
+
+1. Refresh-token rotation is not atomic (lookup then separate revoke);
+   concurrent refreshes with the same token can mint multiple live
+   sessions. Make single-use enforceable via a conditional UPDATE plus
+   RowsAffected check.
+2. `client_message_id` is accepted and echoed but not deduplicated at
+   persistence time; client retries create duplicates. Needs a unique
+   index + idempotent insert (migration).
+3. Hub event loop performs DB I/O inline (up to 5s timeouts each), so one
+   slow query stalls typing/presence/acks for all connected clients.
+   Move persistence off the hub loop before load testing.
+4. Sender's other tabs do not receive live copies of their own new
+   messages (only the sending tab gets an ack). Decide whether multi-tab
+   sync relies on refetch or add self-fan-out.
+
 ## 10. Recommended delivery order
 
 ```text
