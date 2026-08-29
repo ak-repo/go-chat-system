@@ -1,218 +1,33 @@
-import { BASE_URL, getToken } from './client';
+import { BASE_URL, getToken, refreshAccessToken } from './client';
 
-function getWSUrl(): string {
-  const url = new URL(`${BASE_URL}/ws`);
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  return url.toString();
-}
+export type WSEventType = 'message' | 'message.edited' | 'message.deleted' | 'message.replied' | 'message.delivered' | 'message.read' | 'typing' | 'typing.started' | 'typing.stopped' | 'read' | 'user_online' | 'user_offline' | 'ack' | 'error';
+export interface WSMessage<T = unknown> { event: WSEventType; sender_id?: string; receiver_id?: string; receiver_type?: 'user' | 'group'; data: T }
+export interface ChatMessage { message_id: string; client_message_id?: string; content: string; timestamp: string; conversation_id?: string }
+export interface TypingData { state: boolean }
+export interface ReadData { message_id: string; read_at?: string; conversation_id?: string }
+export interface AckData { server_id?: string; message_id?: string; client_message_id?: string; status: 'sent' | 'delivered' | 'read' | 'failed'; event?: string }
+export interface ErrorData { code: string; message: string }
+const events = new Set<WSEventType>(['message', 'message.edited', 'message.deleted', 'message.replied', 'message.delivered', 'message.read', 'typing', 'typing.started', 'typing.stopped', 'read', 'user_online', 'user_offline', 'ack', 'error']);
+function wsUrl(): string { const u = new URL(`${BASE_URL}/ws`); u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'; return `${u}?token=${encodeURIComponent(getToken() ?? '')}`; }
 
-// WebSocket message types
-export type WSEventType = 'message' | 'typing' | 'read' | 'ack' | 'error';
-
-export interface WSMessage<T = unknown> {
-  event: WSEventType;
-  sender_id?: string;
-  receiver_id?: string;
-  receiver_type?: 'user' | 'group';
-  data: T;
-}
-
-export interface ChatMessage {
-  message_id: string;
-  content: string;
-  timestamp: string;
-}
-
-export interface TypingData {
-  is_typing: boolean;
-}
-
-export interface ReadData {
-  message_id: string;
-  read_at: string;
-}
-
-export interface AckData {
-  message_id: string;
-  status: 'sent' | 'delivered' | 'read' | 'failed';
-}
-
-// WebSocket client class
 class WSClient {
-  private ws: WebSocket | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
-  private messageHandlers: Map<WSEventType, Set<(message: WSMessage) => void>> = new Map();
-  private isConnected = false;
-  private shouldReconnect = true;
-  private onStateChange: ((connected: boolean) => void) | null = null;
-
-  // Connect to WebSocket
-  connect(token?: string): void {
-    this.shouldReconnect = true;
-
-    const authToken = token || getToken();
-    if (!authToken) {
-      console.error('No auth token available for WebSocket connection');
-      return;
-    }
-
-    // Close existing connection before creating a new one
-    if (this.ws) {
-      this.ws.onclose = null;
-      this.ws.close();
-      this.ws = null;
-    }
-
-    const url = `${getWSUrl()}?token=${authToken}`;
-    this.ws = new WebSocket(url);
-
-    this.ws.onopen = () => {
-      console.log('WebSocket connected');
-      this.isConnected = true;
-      this.reconnectAttempts = 0;
-      this.onStateChange?.(true);
-    };
-
-    this.ws.onmessage = (event) => {
-      try {
-        const message: WSMessage = JSON.parse(event.data);
-        const handlers = this.messageHandlers.get(message.event);
-        if (handlers) {
-          handlers.forEach((handler) => handler(message));
-        }
-      } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-      }
-    };
-
-    this.ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      this.isConnected = false;
-      this.onStateChange?.(false);
-      if (this.shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.scheduleReconnect(authToken);
-      }
-    };
-
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      this.onStateChange?.(false);
-    };
+  private ws: WebSocket | null = null; private attempts = 0; private timer: ReturnType<typeof setTimeout> | null = null; private enabled = false; private lifecycle = 0; private connectedState = false; private handlers = new Map<WSEventType, Set<(m: WSMessage) => void>>(); private stateHandler: ((connected: boolean) => void) | null = null;
+  connect(token?: string): void { this.enabled = true; if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return; if (token) void this.open(token); else { const current = getToken(); if (current) void this.open(current); } }
+  private async open(token: string, lifecycle = this.lifecycle): Promise<void> { if (!this.enabled || lifecycle !== this.lifecycle) return; this.ws?.close(); if (!this.enabled || lifecycle !== this.lifecycle) return; this.ws = new WebSocket(`${wsUrl().split('?')[0]}?token=${encodeURIComponent(token)}`); const socket = this.ws;
+    socket.onopen = () => { this.attempts = 0; this.connectedState = true; this.stateHandler?.(true); };
+    socket.onmessage = (raw) => { try { const value: unknown = JSON.parse(raw.data as string); if (!value || typeof value !== 'object') return; const m = value as Partial<WSMessage>; if (typeof m.event !== 'string' || !events.has(m.event as WSEventType)) return; this.handlers.get(m.event as WSEventType)?.forEach((handler) => handler(m as WSMessage)); } catch { /* malformed frames are ignored by the client */ } };
+     socket.onclose = () => { if (this.ws !== socket) return; this.ws = null; this.connectedState = false; this.stateHandler?.(false); if (this.enabled && lifecycle === this.lifecycle && this.attempts < 5) { const delay = Math.min(16000, 1000 * 2 ** this.attempts); this.attempts += 1; this.timer = setTimeout(() => { void this.reconnect(lifecycle); }, delay); } };
+    socket.onerror = () => this.stateHandler?.(false);
   }
-
-  // Schedule reconnection
-  private scheduleReconnect(token: string): void {
-    this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-    console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-    setTimeout(() => this.connect(token), delay);
-  }
-
-  // Disconnect
-  disconnect(): void {
-    this.shouldReconnect = false;
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.isConnected = false;
-    this.onStateChange?.(false);
-  }
-
-  // Set callback for connection state changes
-  setOnStateChange(callback: (connected: boolean) => void): void {
-    this.onStateChange = callback;
-  }
-
-  // Send message
-  send(event: WSEventType, data: unknown, receiverId: string): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.error('WebSocket not connected');
-      return;
-    }
-
-    const message: WSMessage = {
-      event,
-      receiver_id: receiverId,
-      receiver_type: 'user',
-      data,
-    };
-
-    this.ws.send(JSON.stringify(message));
-  }
-
-  // Send chat message
-  sendMessage(receiverId: string, content: string): void {
-    const messageId = crypto.randomUUID();
-    const data: ChatMessage = {
-      message_id: messageId,
-      content,
-      timestamp: new Date().toISOString(),
-    };
-    this.send('message', data, receiverId);
-  }
-
-  // Send typing indicator
-  sendTyping(receiverId: string, isTyping: boolean): void {
-    const data: TypingData = { is_typing: isTyping };
-    this.send('typing', data, receiverId);
-  }
-
-  // Send read receipt
-  sendReadReceipt(receiverId: string, messageId: string): void {
-    const data: ReadData = {
-      message_id: messageId,
-      read_at: new Date().toISOString(),
-    };
-    this.send('read', data, receiverId);
-  }
-
-  // Register event handler
-  on<T = unknown>(event: WSEventType, handler: (message: WSMessage<T>) => void): () => void {
-    if (!this.messageHandlers.has(event)) {
-      this.messageHandlers.set(event, new Set());
-    }
-    this.messageHandlers.get(event)!.add(handler as (message: WSMessage) => void);
-
-    // Return unsubscribe function
-    return () => {
-      this.messageHandlers.get(event)?.delete(handler as (message: WSMessage) => void);
-    };
-  }
-
-  // Register message handler
-  onMessage(handler: (message: WSMessage<ChatMessage>) => void): () => void {
-    return this.on('message', handler);
-  }
-
-  // Register typing handler
-  onTyping(handler: (message: WSMessage<TypingData>) => void): () => void {
-    return this.on('typing', handler);
-  }
-
-  // Register read receipt handler
-  onRead(handler: (message: WSMessage<ReadData>) => void): () => void {
-    return this.on('read', handler);
-  }
-
-  // Register ack handler
-  onAck(handler: (message: WSMessage<AckData>) => void): () => void {
-    return this.on('ack', handler);
-  }
-
-  // Register error handler
-  onError(handler: (message: WSMessage<{ message: string }>) => void): () => void {
-    return this.on('error', handler);
-  }
-
-  // Check if connected
-  get connected(): boolean {
-    return this.isConnected;
-  }
+  private async reconnect(lifecycle = this.lifecycle): Promise<void> { if (!this.enabled || lifecycle !== this.lifecycle) return; try { const token = await refreshAccessToken(); if (this.enabled && lifecycle === this.lifecycle) await this.open(token, lifecycle); } catch { const token = getToken(); if (token && this.enabled && lifecycle === this.lifecycle) await this.open(token, lifecycle); } }
+  disconnect(): void { this.enabled = false; this.lifecycle += 1; if (this.timer) clearTimeout(this.timer); this.timer = null; this.ws?.close(); this.ws = null; this.connectedState = false; this.stateHandler?.(false); }
+  setOnStateChange(handler: (connected: boolean) => void): void { this.stateHandler = handler; }
+  send<T>(event: WSEventType, data: T, receiverId: string): boolean { if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false; this.ws.send(JSON.stringify({ event, receiver_id: receiverId, receiver_type: 'user', data })); return true; }
+  sendMessage(receiverId: string, content: string, conversationId?: string, clientMessageId: string = crypto.randomUUID()): string | null { return this.send('message', { content, client_message_id: clientMessageId, conversation_id: conversationId }, receiverId) ? clientMessageId : null; }
+  sendTyping(receiverId: string, state: boolean, conversationId?: string): boolean { return this.send('typing', { state, conversation_id: conversationId }, receiverId); }
+  sendReadReceipt(receiverId: string, messageId: string, conversationId: string): boolean { return this.send('message.read', { message_id: messageId, conversation_id: conversationId }, receiverId); }
+  on<T = unknown>(event: WSEventType, handler: (message: WSMessage<T>) => void): () => void { const set = this.handlers.get(event) ?? new Set(); this.handlers.set(event, set); const callback = handler as (m: WSMessage) => void; set.add(callback); return () => set.delete(callback); }
+  get connected(): boolean { return this.connectedState; }
 }
-
-// Export singleton instance
 export const wsClient = new WSClient();
 export default wsClient;

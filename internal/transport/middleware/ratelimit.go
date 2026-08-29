@@ -3,7 +3,6 @@ package middleware
 import (
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ak-repo/go-chat-system/internal/platform/database"
@@ -47,8 +46,8 @@ return 1
 			).Int()
 
 			if err != nil {
-				// Fail open (recommended)
-				next.ServeHTTP(w, r)
+				// Authentication and recovery routes must fail closed when Redis is unavailable.
+				http.Error(w, "service temporarily unavailable", http.StatusServiceUnavailable)
 				return
 			}
 
@@ -64,14 +63,12 @@ return 1
 
 // IP based key for public routes
 func IPKey(r *http.Request) string {
-	ip := r.Header.Get("X-Forwarded-For")
-	if ip == "" {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err == nil {
-			ip = host
-		}
+	// X-Forwarded-For is attacker-controlled unless a trusted proxy has been
+	// explicitly configured. Use the peer address by default.
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
 	}
-	ip = strings.TrimSpace(ip)
 	if ip == "" {
 		return ""
 	}

@@ -28,8 +28,9 @@ func (r *BlockRepositoryImpl) IsBlocked(ctx context.Context, a, b string) (bool,
 		SELECT EXISTS (
 			SELECT 1
 			FROM blocks
-			WHERE (blocker_id=$1 AND blocked_id=$2)
-			   OR (blocker_id=$2 AND blocked_id=$1)
+			WHERE ((blocker_id=$1 AND blocked_id=$2)
+			   OR (blocker_id=$2 AND blocked_id=$1))
+			  AND deleted_at IS NULL
 		)
 	`, a, b).Scan(&exists)
 	return exists, errs.Wrap("repository.BlockRepository.IsBlocked", err)

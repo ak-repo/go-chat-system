@@ -18,11 +18,25 @@ const (
 )
 
 type Client struct {
-	userID      string
-	conn        *websocket.Conn
-	send        chan *WSMessage
-	hub         *Hub
-	rateLimiter *RateLimiter
+	userID         string
+	sessionID      string
+	conn           *websocket.Conn
+	send           chan *WSMessage
+	hub            *Hub
+	rateLimiter    *RateLimiter
+	closeOnce      sync.Once
+	unregisterOnce sync.Once
+}
+
+func (c *Client) closeSend() { c.closeOnce.Do(func() { close(c.send) }) }
+
+func (c *Client) unregister() {
+	c.unregisterOnce.Do(func() {
+		select {
+		case c.hub.unregister <- c:
+		case <-c.hub.quit:
+		}
+	})
 }
 
 type RateLimiter struct {
@@ -56,11 +70,15 @@ func (r *RateLimiter) Allow() bool {
 }
 
 func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
+	return NewClientWithSession(hub, conn, userID, "")
+}
+func NewClientWithSession(hub *Hub, conn *websocket.Conn, userID, sessionID string) *Client {
 	return &Client{
 		hub:         hub,
 		conn:        conn,
 		send:        make(chan *WSMessage, 256),
 		userID:      userID,
+		sessionID:   sessionID,
 		rateLimiter: NewRateLimiter(),
 	}
 }
@@ -68,7 +86,7 @@ func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
 // Convert socket input → domain message → hub channel (client → hub)
 func (c *Client) ReadPump() {
 	defer func() {
-		c.hub.unregister <- c
+		c.unregister()
 		c.conn.Close()
 	}()
 
@@ -82,6 +100,15 @@ func (c *Client) ReadPump() {
 	for {
 		var msg WSMessage
 		if err := c.conn.ReadJSON(&msg); err != nil {
+			// A malformed JSON frame is a client error, not a reason to take
+			// down a healthy authenticated connection. The bounded queue also
+			// prevents an error flood from blocking the read pump.
+			data := []byte(`{"code":"malformed_event","message":"invalid websocket event"}`)
+			select {
+			case c.send <- &WSMessage{Event: EventError, Data: data}:
+			default:
+				return
+			}
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("WS read error: %v", err)
 			}
@@ -90,22 +117,34 @@ func (c *Client) ReadPump() {
 
 		if !c.rateLimiter.Allow() {
 			log.Printf("Rate limit exceeded for user: %s", c.userID)
-			c.conn.WriteJSON(WSMessage{
+			select {
+			case c.send <- &WSMessage{
 				Event:    "error",
 				Data:     []byte(`{"message":"rate limit exceeded"}`),
 				SenderID: "system",
-			})
+			}:
+			default:
+				return
+			}
 			continue
 		}
 
 		msg.SenderID = c.userID
-		c.hub.incoming <- &msg
+		msg.actorID = c.userID
+		select {
+		case c.hub.incoming <- &msg:
+		case <-c.hub.quit:
+			return
+		}
 	}
 }
 
 // This is the only place that writes to WebSocket.
 func (c *Client) WritePump() {
-	defer c.conn.Close()
+	defer func() {
+		c.unregister()
+		c.conn.Close()
+	}()
 
 	ticker := time.NewTicker(PingPeriod)
 	defer ticker.Stop()

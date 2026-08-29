@@ -5,6 +5,9 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import FriendsPage from './pages/FriendsPage';
 import ChatPage from './pages/ChatPage';
+import ProfilePage from './pages/ProfilePage';
+import RecoveryPage from './pages/RecoveryPage';
+import VerificationPage from './pages/VerificationPage';
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -77,6 +80,8 @@ function AppRoutes() {
           </PublicRoute>
         }
       />
+      <Route path="/recover" element={<PublicRoute><RecoveryPage /></PublicRoute>} />
+      <Route path="/verify" element={<VerificationPage />} />
       <Route
         path="/friends"
         element={
@@ -93,6 +98,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<RootRedirect />} />
     </Routes>

@@ -22,6 +22,8 @@ export interface AuthResponse {
   refresh_exp?: string;
 }
 
+export type TokenResponse = Omit<AuthResponse, 'user'>;
+
 export interface RegisterRequest {
   username: string;
   email: string;
@@ -96,8 +98,53 @@ export async function refreshToken(
 }
 
 // Logout - clear tokens
-export function logout(): void {
+export async function logout(): Promise<ApiResponse<{ user_id: string }>> {
+  const refresh_token = localStorage.getItem('refresh_token');
+  const response = await apiClient.post<ApiResponse<{ user_id: string }>>('/auth/logout', { refresh_token });
+  return toApiResponse(response.data);
+}
+
+export function clearLocalAuth(): void {
   clearTokens();
+  clearStoredUser();
+}
+
+export interface ProfileUpdate { username: string; email: string }
+export interface PasswordChange { password: string }
+export interface RecoveryRequest { email: string }
+export interface RecoveryConfirm { token: string; password: string }
+
+export async function getProfile(): Promise<ApiResponse<User>> {
+  const response = await apiClient.get<ApiResponse<User>>('/users/me');
+  return toApiResponse(response.data);
+}
+export async function updateProfile(data: ProfileUpdate): Promise<ApiResponse<User>> {
+  const response = await apiClient.patch<ApiResponse<User>>('/users/me', data);
+  return toApiResponse(response.data);
+}
+export async function changePassword(data: PasswordChange): Promise<ApiResponse<{ status: string }>> {
+  const response = await apiClient.post<ApiResponse<{ status: string }>>('/users/me/change-password', data);
+  return toApiResponse(response.data);
+}
+export async function deactivateAccount(): Promise<ApiResponse<{ status: string }>> {
+  const response = await apiClient.delete<ApiResponse<{ status: string }>>('/users/me');
+  return toApiResponse(response.data);
+}
+export async function requestPasswordReset(data: RecoveryRequest): Promise<ApiResponse<{ message: string }>> {
+  const response = await apiClient.post<ApiResponse<{ message: string }>>('/auth/password-reset/request', data);
+  return toApiResponse(response.data);
+}
+export async function confirmPasswordReset(data: RecoveryConfirm): Promise<ApiResponse<null>> {
+  const response = await apiClient.post<ApiResponse<null>>('/auth/password-reset/confirm', data);
+  return toApiResponse(response.data);
+}
+export async function requestVerification(email: string): Promise<ApiResponse<{ message: string }>> {
+  const response = await apiClient.post<ApiResponse<{ message: string }>>('/auth/verification/request', { email });
+  return toApiResponse(response.data);
+}
+export async function confirmVerification(token: string): Promise<ApiResponse<null>> {
+  const response = await apiClient.post<ApiResponse<null>>('/auth/verification/confirm', { token });
+  return toApiResponse(response.data);
 }
 
 // Get current user from stored token data

@@ -62,7 +62,8 @@ func (wh *WSHandler) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := ws.NewClient(wh.hub, conn, uid)
+	sid, _ := r.Context().Value(middleware.SessionIDKey).(string)
+	client := ws.NewClientWithSession(wh.hub, conn, uid, sid)
 	wh.hub.Register(client)
 
 	go client.WritePump()

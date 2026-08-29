@@ -34,6 +34,7 @@ export default function LoginPage() {
           <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
             {error}
           </div>
+
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -71,6 +72,8 @@ export default function LoginPage() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
+
+        <div className="mt-3 text-right"><Link to="/recover" className="text-sm text-purple-600 hover:underline">Forgot password?</Link></div>
 
         <p className="mt-4 text-center text-gray-600">
           Don't have an account?{' '}

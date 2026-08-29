@@ -18,7 +18,7 @@ type FriendDTO struct {
 	UserID      string
 	FriendID    string
 	FriendName  string
-	FriendEmail string
+	FriendEmail string    `json:"-"`
 	CreatedAt   time.Time `json:"created_at,omitempty" db:"created_at" `
 }
 

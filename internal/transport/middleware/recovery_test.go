@@ -49,3 +49,12 @@ func TestRecoverLogsPanicWithStackAndSafeResponse(t *testing.T) {
 		t.Fatalf("log fields missing stack: %#v", fields)
 	}
 }
+
+func TestIPKeyIgnoresUntrustedForwardedFor(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "192.0.2.10:1234"
+	r.Header.Set("X-Forwarded-For", "198.51.100.20")
+	if got := IPKey(r); got != "rate:ip:192.0.2.10" {
+		t.Fatalf("unexpected key: %q", got)
+	}
+}

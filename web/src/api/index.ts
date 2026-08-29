@@ -13,6 +13,7 @@ export * from './friends';
 
 // Messages API
 export * from './messages';
+export * from './conversations';
 
 // WebSocket
 export { default as wsClient } from './websocket';

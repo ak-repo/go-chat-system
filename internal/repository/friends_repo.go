@@ -39,6 +39,9 @@ func (r *FriendRepositoryImpl) AreFriends(ctx context.Context, a, b string) (boo
 		SELECT EXISTS (
 			SELECT 1 FROM friends
 			WHERE user_id=$1 AND friend_id=$2
+			  AND deleted_at IS NULL
+			  AND EXISTS (SELECT 1 FROM users WHERE id=$1 AND deleted_at IS NULL)
+			  AND EXISTS (SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL)
 		)
 	`, a, b).Scan(&exists)
 
@@ -56,12 +59,11 @@ func (r *FriendRepositoryImpl) ListFriends(ctx context.Context, userID string, l
 		SELECT f.user_id,
 			   f.friend_id,
 			   u.username,
-			   u.email,
 			   f.created_at
 		FROM friends f
 		JOIN users u ON u.id = f.friend_id
-		WHERE f.user_id=$1
-		ORDER BY f.created_at DESC
+		WHERE f.user_id=$1 AND f.deleted_at IS NULL AND u.deleted_at IS NULL
+		ORDER BY f.created_at DESC, f.friend_id
 		LIMIT $2 OFFSET $3
 	`, userID, limit, offset)
 	if err != nil {
@@ -73,7 +75,7 @@ func (r *FriendRepositoryImpl) ListFriends(ctx context.Context, userID string, l
 
 	for rows.Next() {
 		var f model.FriendDTO
-		if err := rows.Scan(&f.UserID, &f.FriendID, &f.FriendName, &f.FriendEmail, &f.CreatedAt); err != nil {
+		if err := rows.Scan(&f.UserID, &f.FriendID, &f.FriendName, &f.CreatedAt); err != nil {
 			return nil, errs.Wrap("repository.FriendRepository.ListFriends", err)
 		}
 		friends = append(friends, &f)

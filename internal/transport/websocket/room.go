@@ -34,8 +34,7 @@ func (h *Hub) sendToGroup(msg *WSMessage) {
 			select {
 			case c.send <- msg:
 			default:
-				close(c.send)
-				delete(conns, c)
+				h.remove(c)
 			}
 		}
 	}

@@ -30,7 +30,7 @@ func HTTPResponseWrapper(fn WrappedFn) http.HandlerFunc {
 		if err != nil {
 			logHandlerError(r, statusCode, err)
 			userMsg := getUserFriendlyMessage(err)
-			utils.ErrorResponse(w, userMsg, nil, statusCode)
+			utils.ErrorResponse(w, userMsg, err, statusCode)
 			return
 		}
 

@@ -16,6 +16,7 @@ type Container struct {
 	FriendRequestRepo repository.FriendRequestRepository
 	BlockRepo         repository.BlockRepository
 	MessageRepo       repository.MessageRepository
+	ConversationRepo  repository.ConversationRepository
 
 	// Service
 	UserService          service.UserService
@@ -23,6 +24,9 @@ type Container struct {
 	FriendRequestService service.FriendRequestService
 	BlockService         service.BlockService
 	MessageService       service.MessageService
+	MessageHTTPService   service.MessageHTTPService
+	ConversationService  service.ConversationService
+	AccountTokenService  *service.AccountTokenService
 }
 
 // Init creates and wires dependencies.
@@ -37,6 +41,7 @@ func Init() *Container {
 	blockRepo := repository.BlockRepositoryInit(db)
 	friendReqRepo := repository.FriendRequestRepositoryInit(db)
 	messageRepo := repository.NewMessageRepositoryImpl(db)
+	conversationRepo := repository.NewConversationRepository(db)
 
 	// 2) Create services (business layer)
 	friendService := service.NewFriendServiceImpl(friendRepo)
@@ -44,6 +49,9 @@ func Init() *Container {
 	blockService := service.BlockServiceInit(blockRepo)
 	friendReqService := service.FriendRequestServiceInit(friendReqRepo, friendRepo, blockRepo)
 	messageService := service.NewMessageServiceImpl(messageRepo, friendRepo, blockRepo)
+	conversationService := service.NewConversationService(conversationRepo, friendRepo, blockRepo)
+	messageService.SetConversationRepository(conversationRepo)
+	accountTokenService := service.NewAccountTokenService(userRepo, &service.DevelopmentDelivery{})
 
 	return &Container{
 		FriendRepo:           friendRepo,
@@ -56,5 +64,8 @@ func Init() *Container {
 		BlockService:         blockService,
 		MessageRepo:          messageRepo,
 		MessageService:       messageService,
+		MessageHTTPService:   messageService,
+		ConversationRepo:     conversationRepo, ConversationService: conversationService,
+		AccountTokenService: accountTokenService,
 	}
 }

@@ -191,3 +191,15 @@ func TestCreateMessagePersistsForFriends(t *testing.T) {
 		t.Fatalf("expected trimmed body, got %q", msg.Body)
 	}
 }
+
+func TestCreateMessageRejectsOversizedBody(t *testing.T) {
+	repo := &fakeMessageRepo{}
+	service := NewMessageServiceImpl(repo, fakeFriendRepo{areFriends: true}, fakeBlockRepo{})
+	_, err := service.CreateMessage(context.Background(), "user-1", "user-2", string(make([]byte, 4097)), false)
+	if !errors.Is(err, errs.ErrValidation) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if repo.created != nil {
+		t.Fatal("oversized message was persisted")
+	}
+}

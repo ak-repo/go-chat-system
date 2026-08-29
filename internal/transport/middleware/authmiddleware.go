@@ -11,8 +11,21 @@ import (
 type ContextKey string
 
 const UserIDKey ContextKey = "userID"
+const SessionIDKey ContextKey = "sessionID"
 
 func AuthMiddleware() Middleware {
+	return AuthMiddlewareWithActiveUser(nil)
+}
+
+// AuthMiddlewareWithActiveUser additionally checks account state after JWT
+// validation. The callback keeps persistence out of the transport package.
+func AuthMiddlewareWithActiveUser(active func(context.Context, string) bool) Middleware {
+	return AuthMiddlewareWithSession(func(ctx context.Context, claims *jwt.Claims) bool {
+		return active == nil || active(ctx, claims.UserID)
+	})
+}
+
+func AuthMiddlewareWithSession(check func(context.Context, *jwt.Claims) bool) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var token string
@@ -48,9 +61,14 @@ func AuthMiddleware() Middleware {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
+			if check != nil && !check(r.Context(), claims) {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
 
 			// 5. Inject user ID into request context
 			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+			ctx = context.WithValue(ctx, SessionIDKey, claims.SessionID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

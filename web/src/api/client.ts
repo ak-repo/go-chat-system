@@ -1,6 +1,7 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-export const BASE_URL = 'http://localhost:8002/api/v1';
+const configuredOrigin = (import.meta.env.VITE_API_ORIGIN as string | undefined)?.trim();
+export const BASE_URL = `${(configuredOrigin || 'http://localhost:8002').replace(/\/$/, '')}/api/v1`;
 
 // Token storage keys
 const TOKEN_KEY = 'auth_token';
@@ -58,6 +59,7 @@ export interface ApiResponse<T> {
   error?: string;
   message?: string;
   status?: string;
+  code?: string;
 }
 
 export interface BackendResponse<T> {
@@ -65,6 +67,7 @@ export interface BackendResponse<T> {
   data?: T;
   error?: unknown;
   message?: string;
+  code?: string;
 }
 
 export function toApiResponse<T>(payload: BackendResponse<T> | ApiResponse<T>): ApiResponse<T> {
@@ -81,6 +84,7 @@ export function toApiResponse<T>(payload: BackendResponse<T> | ApiResponse<T>): 
     data: payload.data,
     error,
     message: payload.message,
+    code: payload.code,
   };
 }
 
@@ -106,7 +110,7 @@ apiClient.interceptors.request.use(
 );
 
 // Response interceptor - handle 401 for token refresh
-let isRefreshing = false;
+let refreshPromise: Promise<string> | null = null;
 let failedQueue: Array<{
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
@@ -128,8 +132,8 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
+    if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url?.endsWith('/auth/refresh')) {
+      if (refreshPromise) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
@@ -141,25 +145,22 @@ apiClient.interceptors.response.use(
       }
 
       originalRequest._retry = true;
-      isRefreshing = true;
-
       const refreshToken = getRefreshToken();
       if (!refreshToken) {
         clearTokens();
-        isRefreshing = false;
         return Promise.reject(error);
       }
 
       try {
-        const response = await axios.post(`${BASE_URL}/auth/refresh`, {
-          refresh_token: refreshToken,
-        });
-
-        const { token, refresh_token, exp } = response.data.data;
-        setToken(token, exp);
-        if (refresh_token) setRefreshToken(refresh_token);
-
-        processQueue(null, token);
+        refreshPromise = axios.post(`${BASE_URL}/auth/refresh`, { refresh_token: refreshToken })
+          .then((response) => {
+            const data = response.data.data as AuthTokenResponse;
+            setToken(data.token, data.exp);
+            if (data.refresh_token) setRefreshToken(data.refresh_token);
+            processQueue(null, data.token);
+            return data.token;
+          });
+        const token = await refreshPromise;
         originalRequest.headers.Authorization = `Bearer ${token}`;
         return apiClient(originalRequest);
       } catch (refreshError) {
@@ -168,7 +169,7 @@ apiClient.interceptors.response.use(
         window.location.href = '/login';
         return Promise.reject(refreshError);
       } finally {
-        isRefreshing = false;
+        refreshPromise = null;
       }
     }
 
@@ -177,3 +178,26 @@ apiClient.interceptors.response.use(
 );
 
 export default apiClient;
+
+export interface AuthTokenResponse {
+  token: string;
+  exp: string;
+  refresh_token?: string;
+  refresh_exp?: string;
+}
+
+/** Shared refresh operation for HTTP and WebSocket lifecycles. */
+export async function refreshAccessToken(): Promise<string> {
+  if (refreshPromise) return refreshPromise;
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) throw new Error('No refresh token available');
+  refreshPromise = axios.post(`${BASE_URL}/auth/refresh`, { refresh_token: refreshToken })
+    .then((response) => {
+      const data = response.data.data as AuthTokenResponse;
+      setToken(data.token, data.exp);
+      if (data.refresh_token) setRefreshToken(data.refresh_token);
+      return data.token;
+    })
+    .finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}

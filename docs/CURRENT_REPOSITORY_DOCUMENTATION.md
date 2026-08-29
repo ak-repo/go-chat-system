@@ -161,7 +161,12 @@ The frontend lives under `web/`.
 
 ## 6. Database Structure
 
-The current schema is defined by `migrations/20260126104003_initial_schema.sql`.
+The current fresh-install schema is defined by
+`migrations/20260829120500_canonical_schema.sql`. It combines the former
+initial and Phase 1 migrations into one Goose file. It is not an in-place
+replacement for a database that has already recorded the former migration
+versions; such a database must be rebuilt or handled by a separately designed
+upgrade migration.
 
 ### Tables
 
@@ -204,12 +209,22 @@ The current schema is defined by `migrations/20260126104003_initial_schema.sql`.
 - `body TEXT NOT NULL`
 - `is_group BOOLEAN NOT NULL DEFAULT FALSE`
 - timestamps: `created_at`, `modified_at`, `deleted_at`
+- `conversation_id` references `conversations`
+- nullable `client_message_id`, `edited_at`, and `reply_to_message_id`
 - indexes by receiver/time and sender/time
+
+#### `sessions`, `account_tokens`, `conversations`, `conversation_members`,
+`message_deliveries`, and `conversation_read_state`
+
+- These tables provide hashed refresh-token sessions, one-time account tokens,
+  direct conversation membership, per-recipient delivery status, and durable
+  per-user read state.
 
 ### Notable behavior
 
-- The schema contains soft-delete timestamp columns, but repositories generally use hard deletes or ignore `deleted_at` filters.
-- Group messaging has an `is_group` field in `messages`, but no group tables exist.
+- Active application queries filter soft-deactivated users through `deleted_at`.
+- Group messaging has an `is_group` field in `messages`, but the canonical
+  conversation schema currently permits only direct conversations.
 
 ## 7. Authentication
 

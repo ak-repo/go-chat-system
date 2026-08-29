@@ -7,6 +7,10 @@ import (
 
 const (
 	MinPasswordLength = 8
+	MaxPasswordLength = 72
+	MaxMessageLength  = 4096
+	MaxUsernameLength = 64
+	MaxEmailLength    = 254
 )
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
@@ -25,7 +29,7 @@ func ValidateEmail(email string) bool {
 
 // ValidatePassword checks password meets minimum requirements
 func ValidatePassword(password string) bool {
-	if len(password) < MinPasswordLength {
+	if len(password) < MinPasswordLength || len(password) > MaxPasswordLength {
 		return false
 	}
 	return true

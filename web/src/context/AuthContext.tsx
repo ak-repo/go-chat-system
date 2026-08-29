@@ -1,22 +1,23 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
-import { login as apiLogin, logout as apiLogout, register } from '../api/auth';
+import { login as apiLogin, logout as apiLogout, register, clearLocalAuth, updateProfile } from '../api/auth';
 import type { User, LoginRequest, RegisterRequest } from '../api/auth';
 import {
   setStoredUser,
   getStoredUser,
-  clearStoredUser,
 } from '../api/auth';
 import { getToken } from '../api/client';
+import wsClient from '../api/websocket';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (data: LoginRequest) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
   registerUser: (data: RegisterRequest) => Promise<{ success: boolean; error?: string }>;
+  updateUser: (data: { username: string; email: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -43,9 +44,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = (): void => {
-    apiLogout();
-    clearStoredUser();
+  const logout = async (): Promise<void> => {
+    // Stop reconnects before revoking/clearing credentials.
+    wsClient.disconnect();
+    try { await apiLogout(); } catch { /* local logout must still complete */ }
+    clearLocalAuth();
     setUser(null);
   };
 
@@ -64,6 +67,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateUser = async (data: { username: string; email: string }) => {
+    try {
+      const response = await updateProfile(data);
+      if (response.success && response.data) {
+        setUser(response.data);
+        setStoredUser(response.data);
+        return { success: true };
+      }
+      return { success: false, error: response.error || 'Profile update failed' };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Profile update failed' };
+    }
+  };
+
   const value: AuthContextType = {
     user,
     isAuthenticated: !!user,
@@ -71,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     logout,
     registerUser,
+    updateUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

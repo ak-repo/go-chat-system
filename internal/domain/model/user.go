@@ -15,6 +15,7 @@ type User struct {
 	CreatedAt    time.Time    `json:"created_at,omitempty" db:"created_at" `
 	ModifiedAt   time.Time    `json:"modified_at,omitempty" db:"modified_at" `
 	DeletedAt    sql.NullTime `json:"deleted_at,omitempty" db:"deleted_at" `
+	VerifiedAt   *time.Time   `json:"-" db:"verified_at"`
 }
 
 type UserDTO struct {
@@ -22,6 +23,19 @@ type UserDTO struct {
 	Username string `db:"username" json:"username"`
 	Email    string `db:"email" json:"email"`
 	Role     string `db:"role" json:"role"`
+}
+
+// PublicUser is the deliberately small representation safe for discovery.
+type PublicUser struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+type Session struct {
+	ID               string
+	UserID           string
+	RefreshTokenHash []byte
+	ExpiresAt        time.Time
 }
 
 type UsersDTO []*UserDTO

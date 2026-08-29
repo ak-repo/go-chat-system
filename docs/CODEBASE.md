@@ -8,9 +8,13 @@ documentation. Feature status is explicitly classified as **implemented**,
 ## 1. Project overview
 
 `go-chat-system` is a Go backend with a React/TypeScript single-page frontend.
-The implemented product path is registration/login, authenticated user search,
-friend requests and friendships, blocking, direct message history, and direct
-real-time messaging over authenticated WebSockets.
+The implemented product path is registration/login with persisted sessions,
+logout and token rotation, profile/account actions, password recovery and
+verification token flows, authenticated user search, friend requests and
+friendships, blocking, direct conversations, direct message history and
+mutations, delivery/read/unread state, and direct real-time messaging over
+authenticated WebSockets. Verification is not an authentication gate, and
+recovery/verification delivery is development-only.
 
 The normal backend dependency direction is:
 
@@ -67,7 +71,7 @@ internal/transport/wrapper/           REST response and WS upgrade wrappers
 migrations/                           Goose schema and demo seed
 web/src/api/                          REST and WebSocket client layer
 web/src/context/                      auth and socket lifecycle state
-web/src/pages/                        login, register, friends, chat UI
+web/src/pages/                        auth, recovery, verification, profile, friends, chat UI
 docs/                                 repository and deployment documentation
 plans/                                planning documents; not runtime behavior
 ```
@@ -80,7 +84,10 @@ SIGINT/SIGTERM stops the in-memory WebSocket hub first and then performs a
 10-second HTTP graceful shutdown.
 
 `internal/transport/injector/injector.go` is the composition root. It creates
-the five repositories and five services and passes them to the route layer.
+the repositories and services for users/sessions/account tokens, friendships,
+blocks, conversations, and messages, then passes them to the route layer. The
+account-token service is wired with `DevelopmentDelivery`, which records the
+last token in memory rather than sending email.
 
 Transport owns parsing, authentication context, routing, WebSocket framing,
 and serialization. Services own business rules. Repositories own SQL,
@@ -96,49 +103,61 @@ The REST wrapper returns `{"status":"ok","data":...}` for data responses,
 
 - `web/src/api/client.ts` owns the Axios client, bearer-token injection,
   localStorage token storage, and one-at-a-time 401 refresh queuing.
-- `web/src/api/auth.ts`, `users.ts`, `friends.ts`, and `messages.ts` wrap REST
-  contracts and normalize the backend response envelope.
+- `web/src/api/auth.ts`, `users.ts`, `friends.ts`, `conversations.ts`, and
+  `messages.ts` wrap REST contracts and normalize the backend response envelope.
 - `web/src/api/websocket.ts` owns the singleton WebSocket, event dispatch,
   sending, and bounded exponential reconnects.
 - `AuthContext` owns the current user and login/register/logout state.
 - `SocketContext` connects the socket while authenticated and exposes socket
   actions/listeners to pages.
-- `App.tsx` routes `/login`, `/register`, `/friends`, and `/chat/:userId` and
-  applies public/protected route guards.
+- `App.tsx` routes `/login`, `/register`, `/recover`, `/verify`, `/friends`,
+  `/profile`, and `/chat/:userId`, and applies public/protected route guards.
 - `FriendsPage` implements friend listing, incoming requests, and user search.
-- `ChatPage` loads history, displays direct messages, sends messages, and
-  displays typing state.
+- `ChatPage` creates/opens a direct conversation, loads paginated history,
+  displays direct messages and statuses, sends messages with client IDs,
+  retries failed sends, marks incoming messages read, and displays typing state.
 
 The frontend REST base URL is currently hard-coded to
 `http://localhost:8002/api/v1` in `web/src/api/client.ts`.
 
 ## 6. Database structure
 
-The only Goose migration is
-`migrations/20260126104003_initial_schema.sql`.
+The final schema is defined by the single fresh-install migration
+`migrations/20260829120500_canonical_schema.sql`. It replaces the previously
+split Phase 1 migration set and must be applied to a database with no prior
+versions from that set. Its `Down` is intentionally destructive.
 
 | Table | Current purpose |
 | --- | --- |
-| `users` | UUID identity, username, unique email, bcrypt hash, role, timestamps, `deleted_at`. |
+| `users` | UUID identity, username, unique email, bcrypt hash, role, timestamps, `deleted_at`, and nullable `verified_at`. |
 | `friends` | Directed rows; mutual friendship is two rows. Composite primary key and no-self constraint. |
 | `blocks` | Directed blocker/blocked rows with composite primary key and no-self constraint. |
 | `friend_requests` | Sender, receiver, UUID, status (`pending`, `accepted`, `rejected`, `blocked`), timestamps. |
-| `messages` | Sender, receiver, body, `is_group`, timestamps, and `deleted_at`. |
+| `messages` | Sender, receiver, conversation, body, `is_group`, timestamps, deletion/edit state, client idempotency ID, and optional reply. |
+| `sessions` | Hashed refresh-token sessions with expiry, rotation, and revocation state. |
+| `account_tokens` | One-time hashed verification and password-reset tokens. |
+| `conversations` | Currently direct conversations with a canonical user pair. |
+| `conversation_members` | Active/left membership for conversations. |
+| `message_deliveries` | Per-recipient monotonic sent/delivered/read/failed state. |
+| `conversation_read_state` | Per-user last-read message and timestamp. |
 
-Foreign keys cascade user deletion for relationship tables. Indexes cover user
-email, friend/block lookup, pending request receiver, and message sender or
-receiver by creation time. The seed file contains demo data.
+Foreign keys constrain relationships, conversations, and messages. Indexes cover
+user discovery, sessions, account-token lookup, friend/block lookup, pending
+requests, conversations/members, messages, idempotency, replies, delivery, and
+read state. The seed file contains demo data.
 
-The schema has soft-delete columns, but current repositories mostly hard-delete
-or omit `deleted_at` filtering. `messages.is_group` is present, but there are
-no group or membership tables.
+User and message deactivation/deletion use `deleted_at` filtering in the active
+flows. `messages.is_group` and group receiver types remain scaffolding; the
+conversation schema currently permits only direct conversations.
 
 ## 7. Authentication
 
 Registration validates required fields, email format, and an eight-character
-minimum password, hashes with bcrypt, creates a user, and returns an access
-JWT. Login verifies the hash and returns access and refresh JWTs. Refresh
-validates the refresh JWT and reloads the user before issuing both tokens.
+minimum password, hashes with bcrypt, creates a user and session, and returns
+access and refresh JWTs. Login does the same after verifying bcrypt. Refresh
+validates the JWT, rotates the stored session, and issues both new tokens.
+Logout validates the authenticated user's refresh token and revokes its session;
+password changes/resets and deactivation revoke the user's sessions.
 
 Access claims contain user ID, email, role, issuer, issue time, and expiry.
 Refresh claims contain user ID, issuer, issue time, and expiry. Protected
@@ -148,10 +167,11 @@ cookie. The validated user ID is stored in request context.
 The WebSocket path uses the same middleware. `Client.ReadPump` overwrites any
 client-supplied `sender_id` with the authenticated context identity.
 
-**Partial/limitations:** refresh tokens are stateless and cannot be revoked;
-there is no logout endpoint or server-side token store; browser tokens and the
-stored user are kept in localStorage; registration does not return a refresh
-token, unlike login and refresh.
+**Implemented with limitations:** refresh-token hashes and session state are
+stored server-side and checked on protected routes and by the WebSocket hub.
+Browser tokens and the stored user remain in localStorage. Recovery and
+verification use development-only delivery, and verification is informational:
+`verified_at` is not enforced as an authentication gate.
 
 ## 8. REST APIs
 
@@ -165,12 +185,21 @@ access JWT. Successful nil responses are encoded as `{"message":"ok"}`.
 | `POST /auth/register` | `username`, `email`, `password` | `201`; user, access `token`, `exp` |
 | `POST /auth/login` | `email`, `password` | `200`; user, access/refresh tokens and expiries |
 | `POST /auth/refresh` | `refresh_token` | `200`; new access/refresh tokens and expiries |
+| `POST /auth/logout` | `refresh_token` | Revokes the authenticated session. |
+| `POST /auth/password-reset/request` | `email` | Generic recovery response; development delivery records the token. |
+| `POST /auth/password-reset/confirm` | `token`, `password` | Consumes token, changes password, and revokes sessions. |
+| `POST /auth/verification/request` | `email` | Generic verification response; development delivery records the token. |
+| `POST /auth/verification/confirm` | `token` | Consumes token and sets `users.verified_at`. |
 
 ### Protected application routes
 
 | Method/path | Body/query | Behavior |
 | --- | --- | --- |
 | `GET /users` | `filter`, `limit` (default 20, max 100) | Username/email search; filters shorter than two characters return empty. |
+| `GET /users/me` | none | Returns the authenticated user's profile DTO. |
+| `PATCH /users/me` | `username`, `email` | Updates the authenticated user's profile fields. |
+| `POST /users/me/change-password` | `password` | Changes password and revokes all sessions. |
+| `DELETE /users/me` | none | Soft-deactivates the account and revokes all sessions. |
 | `GET /friends` | `limit` (20/100), `offset` (0+) | Lists the authenticated user's friends. |
 | `GET /friend-requests/` | none | Lists requests received by the authenticated user. |
 | `POST /friend-requests/` | `{to}` | Creates a pending request after self, duplicate, friendship, and block checks. |
@@ -179,12 +208,23 @@ access JWT. Successful nil responses are encoded as `{"message":"ok"}`.
 | `POST /friend-requests/cancel` | `{request_id}` | Sender-only deletion of a pending request. |
 | `POST /blocks/` | `{target}` | Creates a block, removes friendship rows, marks related requests blocked. |
 | `POST /blocks/unblock` | `{target}` | Removes the authenticated user's block row. |
-| `GET /messages` | `user_id`; `limit` (50/100), `offset` (0+) | Returns direct conversation history, newest-first from SQL. |
+| `POST /conversations` | `{user_id}` | Creates or gets a direct conversation; requires friendship and no block. |
+| `GET /conversations` | `limit` (50/100), `offset` (0+) | Lists active conversations for the authenticated member. |
+| `GET /conversations/{conversationID}` | none | Gets a conversation only for an active member. |
+| `GET /conversations/{conversationID}/messages` | `limit` (50/100), `offset` (0+) | Returns authorized direct conversation history. |
+| `POST /conversations/{conversationID}/messages` | `content`, optional client/reply IDs | Persists an authorized message with duplicate-safe client ID handling. |
+| `PATCH /messages/{messageID}` | `{content}` | Sender-only message edit. |
+| `DELETE /messages/{messageID}` | none | Sender-only soft delete. |
+| `POST /messages/delivery` | `{message_id}`, `status` (`delivered`/`read`) | Recipient-only monotonic delivery update. |
+| `POST /conversations/{conversationID}/read` | `{message_id}` | Marks the recipient's conversation messages through a message as read. |
+| `GET /unread` | none | Returns unread counts keyed by conversation ID. |
 | `GET /ws` | authenticated upgrade | Opens a WebSocket connection. |
 
-Message sending checks friendship and block status in the service. History
-reads currently do not repeat those checks. API errors are mostly stable only
-by HTTP status and human-readable message; there are no public error codes.
+Conversation access and message history/send operations check authenticated
+membership and the direct friendship/block relationship. Message edit/delete
+is sender-only; replies are available through the message send contract and
+WebSocket mutation path. API errors are mostly stable only by HTTP status and
+human-readable message; there are no public error codes.
 
 Health routes outside the API namespace are `GET /health/live`,
 `GET /health/ready`, `GET /redis-health`, and `GET /db-health`.
@@ -202,17 +242,21 @@ Envelope:
 {"event":"message","sender_id":"server-set","receiver_id":"user-id","receiver_type":"user","data":{}}
 ```
 
-For `message` to a user, the hub accepts `data.text` or `data.content`, calls
-`MessageService.CreateMessage`, persists first, sends the persisted message to
-all active receiver connections, and sends `{message_id,status:"sent"}` ack to
-the sender. Persistence or malformed payload failures send an `error` event
-to the sender. Direct messages require friendship and no block.
+For `message` to a user, the hub validates the envelope, derives the actor from
+the authenticated socket, calls the message service, persists first (including
+conversation and delivery creation), sends the persisted message to all active
+receiver connections, and sends an ack containing server/client IDs and status
+to the sender. Client IDs make retries duplicate-safe. Persistence or malformed
+payload failures send an `error` event. Direct messages require conversation
+membership, friendship, and no block.
 
-The server also routes generic user-targeted events. The frontend defines
-`message`, `typing`, `read`, `ack`, and `error`; typing and read are currently
-ephemeral generic routing only. The hub broadcasts `user_online` on a user's
-first connection and `user_offline` after its last connection closes, but the
-frontend does not consume these presence events.
+The server supports `message.edited`, `message.deleted`, `message.replied`,
+`message.delivered`, and `message.read` mutation/status events. These are
+authorized and persisted through `MessageService` before being routed and
+acknowledged. `typing` is authorized but intentionally ephemeral. The hub also
+broadcasts `user_online` on a user's first connection and `user_offline` after
+its last connection closes; the frontend accepts these event types but does
+not maintain a presence view.
 
 Connection controls are a 10 KB read limit, 60-second read deadline refreshed
 by pong, 10-second write deadline, 30-second ping, 10 inbound messages per
@@ -220,37 +264,45 @@ second, and removal of clients whose send queue is full. The frontend retries
 up to five times with exponential delays starting at one second.
 
 **Scaffolded:** `ReceiverType: group`, `Room`, `CreateRoom`, and group routing
-exist in memory. There are no group routes, persistence, membership service, or
-group UI. The hub is process-local; Redis is not used for WebSocket fan-out.
+exist in memory. There are no group routes, group persistence, or group UI. The
+hub is process-local; Redis is not used for WebSocket fan-out or presence.
 
 ## 10. Currently implemented features
 
 - Registration, login, password hashing, access validation, and refresh.
+- Persisted sessions, refresh rotation, logout/revocation, profile updates,
+  password changes, soft deactivation, password recovery, and verification
+  token consumption.
 - Protected REST API and Redis HTTP rate limiting (10/minute public auth,
   120/minute protected user limit).
 - User search, friend requests, mutual friendships, friend listing, blocking,
   and unblocking.
-- Direct message persistence and REST history retrieval.
-- Authenticated direct WebSocket delivery, sender identity protection,
-  persistence ack/error, presence broadcast, ping/pong, limits, and multiple
-  connections per user.
-- React login/register, friends/search/request, and direct chat screens.
+- Direct conversation creation/list/get, membership checks, message persistence
+  and REST history retrieval.
+- Message edit/delete/reply, client-idempotent sends, durable delivery/read
+  state, and unread summaries through REST and service/repository paths.
+- Authenticated direct WebSocket delivery and mutation/status events, sender
+  identity protection, persistence ack/error, presence broadcast, ping/pong,
+  limits, and multiple connections per user.
+- React login/register, recovery/verification, profile, friends/search/request,
+  and direct chat screens with pagination, optimistic send reconciliation,
+  retry, read marking, and unread loading.
 - PostgreSQL/Redis health checks and local Docker infrastructure.
 
 ## 11. Partial, scaffolded, and missing features
 
 ### Partial
 
-- Typing indicators route through the backend and display in direct chat, but
-  have no backend validation or persistence.
-- Read receipt types and send helpers exist, but chat does not use them and no
-  receipts are stored.
+- Typing indicators are membership-authorized and display in direct chat, but
+  are ephemeral and not persisted.
 - Presence is emitted by the hub but not represented in frontend state.
-- Chat uses optimistic client IDs while the server creates message IDs; ack
-  reconciliation and failed-send rollback are not implemented.
+- REST and WebSocket mutation/status contracts exist, but the chat UI does not
+  yet render edit/delete/reply controls or all inbound mutation events.
 - Soft delete is modeled but not consistently enforced.
 - Refresh lifecycle, localStorage token storage, and hard-coded frontend URL
   are usable locally but incomplete for production.
+- Recovery and verification flows are operational, but delivery is only the
+  in-memory development adapter and verification is not enforced.
 
 ### Scaffolded
 
@@ -261,12 +313,15 @@ group UI. The hub is process-local; Redis is not used for WebSocket fan-out.
 ### Missing
 
 - Group management and membership persistence/UI.
-- Message edit/delete, durable delivery/read status, and offline notifications.
-- Password reset, email verification, profile/account management.
-- Server-side logout or refresh-token revocation.
+- Offline notifications and queued delivery while a recipient is disconnected.
+
+Registration deliberately does not require email verification for compatibility
+with the current client and existing accounts. Verification tokens are
+implemented, but `verified_at` is informational rather than an authentication
+gate.
 - Distributed WebSocket fan-out/presence for multiple backend instances.
-- Automated frontend tests, production application containers, and Kubernetes
-  manifests.
+- Automated frontend tests, PostgreSQL repository/integration tests, production
+  application containers, and Kubernetes manifests.
 
 ## 12. Configuration
 
@@ -288,7 +343,8 @@ default to `http://<CORS.host>:<CORS.port>`.
 Current Go tests cover message service authorization/persistence behavior,
 friend-request authenticated-actor behavior, WebSocket message parsing and
 delivery/ack/error behavior, JWT refresh validation, response wrappers, error
-helpers, and recovery middleware. There are no frontend tests in `web`.
+helpers, and recovery middleware. There are no automated frontend tests or
+PostgreSQL repository/integration tests in the repository.
 
 Repository verification commands are:
 
@@ -316,12 +372,17 @@ production Dockerfile for the application or frontend.
 - WebSocket state and delivery are single-process only.
 - Message history is offset-paginated and SQL-ordered newest-first; the UI
   re-sorts it chronologically.
-- No startup migration runner, durable event status, or offline delivery.
-- Some frontend/backend contract edges remain incomplete, especially optimistic
-  message reconciliation and optional event handling.
+- No startup migration runner or offline delivery/event replay.
+- The chat UI does not yet expose edit/delete/reply controls or render every
+  mutation/status event, although the backend REST and WebSocket paths exist.
 - Error responses lack machine-readable codes.
 - Soft-delete semantics are incomplete.
-- Browser tokens are stored in localStorage and refresh tokens are revocable
-  only by changing the signing secret.
+- Browser tokens are stored in localStorage. WebSocket credentials are passed
+  in the `token` query string, which can expose access tokens to intermediary
+  logs; use a safer upgrade mechanism before production deployment.
+- Recovery and verification delivery is development-only (`DevelopmentDelivery`)
+  rather than email/phone delivery, and verification is not enforced.
+- Automated frontend tests and PostgreSQL repository/integration tests are not
+  implemented.
 
 For deployment-specific commands and checklist, see `docs/DEPLOYMENT.md`.

@@ -140,3 +140,57 @@ func TestRouteMessageSendsErrorWhenPersistenceFails(t *testing.T) {
 		t.Fatalf("expected sender error")
 	}
 }
+
+func TestRouteMessageUsesAuthenticatedActorOverWireSender(t *testing.T) {
+	hub := NewHub(fakeHubMessageService{msg: &model.Message{ID: "id", SenderID: "trusted", ReceiverID: "receiver", Body: "hello", CreatedAt: time.Now()}})
+	sender := &Client{userID: "trusted", send: make(chan *WSMessage, 2)}
+	receiver := &Client{userID: "receiver", send: make(chan *WSMessage, 1)}
+	hub.clients["trusted"] = map[*Client]bool{sender: true}
+	hub.clients["receiver"] = map[*Client]bool{receiver: true}
+	hub.routeMessage(&WSMessage{Event: EventMessage, SenderID: "attacker", actorID: "trusted", ReceiverID: "receiver", ReceiverType: ReceiverUser, Data: json.RawMessage(`{"content":"hello"}`)})
+	if got := (<-receiver.send).SenderID; got != "trusted" {
+		t.Fatalf("sender identity was spoofed: %q", got)
+	}
+}
+
+func TestWSMessageRejectsUnknownAndClientAckEvents(t *testing.T) {
+	for _, event := range []string{"unknown", EventAck} {
+		if err := (&WSMessage{Event: event, Data: json.RawMessage(`{}`)}).Validate(); err == nil {
+			t.Fatalf("expected %q to be rejected", event)
+		}
+	}
+}
+
+func TestClientUnregisterIsIdempotent(t *testing.T) {
+	hub := NewHub(fakeHubMessageService{})
+	c := &Client{hub: hub, userID: "user", send: make(chan *WSMessage, 1)}
+	go c.unregister()
+	select {
+	case got := <-hub.unregister:
+		if got != c {
+			t.Fatal("unexpected client unregister event")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("client did not unregister")
+	}
+	c.unregister()
+	select {
+	case <-hub.unregister:
+		t.Fatal("client emitted duplicate unregister event")
+	default:
+	}
+}
+
+func TestTypingRequiresConversation(t *testing.T) {
+	m := &WSMessage{Event: EventTyping, ReceiverType: ReceiverUser, ReceiverID: "u", Data: json.RawMessage(`{"state":"started"}`)}
+	if err := m.Validate(); err == nil {
+		t.Fatal("typing event without conversation must be rejected")
+	}
+}
+
+func TestMessageRejectsInvalidClientUUID(t *testing.T) {
+	_, _, err := extractMessage(json.RawMessage(`{"content":"hello","client_message_id":"not-a-uuid"}`))
+	if err == nil {
+		t.Fatal("expected invalid client UUID to be rejected")
+	}
+}

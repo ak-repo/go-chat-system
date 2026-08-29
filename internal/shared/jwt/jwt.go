@@ -9,24 +9,36 @@ import (
 )
 
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Role   string `json:"role"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
+	TokenUse  string `json:"token_use"`
+	SessionID string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
 type RefreshClaims struct {
-	UserID string `json:"user_id"`
+	UserID    string `json:"user_id"`
+	SessionID string `json:"sid"`
+	TokenUse  string `json:"token_use"`
 	jwt.RegisteredClaims
 }
 
+func RefreshExpiry() time.Duration { return config.Config.JWT.RefreshExpiry }
+
 // GenerateAccessToken creates a new JWT access token
 func GenerateToken(userID, email, role string) (string, time.Time, error) {
+	return GenerateTokenForSession(userID, email, role, "")
+}
+
+func GenerateTokenForSession(userID, email, role, sessionID string) (string, time.Time, error) {
 	expirationTime := time.Now().Add(config.Config.JWT.Expiry)
 	claims := &Claims{
-		UserID: userID,
-		Email:  email,
-		Role:   role,
+		UserID:    userID,
+		Email:     email,
+		Role:      role,
+		TokenUse:  "access",
+		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -45,6 +57,10 @@ func GenerateToken(userID, email, role string) (string, time.Time, error) {
 
 // GenerateRefreshToken creates a new JWT refresh token
 func GenerateRefreshToken(userID string) (string, time.Time, error) {
+	return GenerateRefreshTokenForSession(userID, "")
+}
+
+func GenerateRefreshTokenForSession(userID, sessionID string) (string, time.Time, error) {
 	refreshExpiry := config.Config.JWT.RefreshExpiry
 	if refreshExpiry <= 0 {
 		refreshExpiry = 7 * 24 * time.Hour // default 7 days
@@ -52,7 +68,9 @@ func GenerateRefreshToken(userID string) (string, time.Time, error) {
 	expirationTime := time.Now().Add(refreshExpiry)
 
 	claims := &RefreshClaims{
-		UserID: userID,
+		UserID:    userID,
+		SessionID: sessionID,
+		TokenUse:  "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -85,6 +103,9 @@ func ValidateToken(tokenString string) (*Claims, error) {
 	if !token.Valid {
 		return nil, fmt.Errorf("token invalid")
 	}
+	if claims.TokenUse != "access" {
+		return nil, fmt.Errorf("invalid access token use")
+	}
 
 	// Validate issuer if configured
 	if config.Config.JWT.Issuer != "" && claims.Issuer != config.Config.JWT.Issuer {
@@ -109,6 +130,9 @@ func ValidateRefreshToken(tokenString string) (*RefreshClaims, error) {
 
 	if !token.Valid {
 		return nil, fmt.Errorf("refresh token invalid")
+	}
+	if claims.TokenUse != "refresh" {
+		return nil, fmt.Errorf("invalid refresh token use")
 	}
 
 	// Validate issuer if configured

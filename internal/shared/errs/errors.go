@@ -15,6 +15,9 @@ var (
 	ErrConflict     = errors.New("conflict")
 	ErrValidation   = errors.New("validation failed")
 	ErrDatabase     = errors.New("database error")
+	ErrInactiveUser = errors.New("inactive user")
+	ErrTokenReused  = errors.New("token revoked or already used")
+	ErrNotMember    = errors.New("not a conversation member")
 
 	// Validation-specific errors for better user feedback
 	ErrInvalidEmail = errors.New("invalid email format")
