@@ -33,14 +33,14 @@ func Logger() Middleware {
 			}
 
 			logger.L().Info("http request",
-				zap.String("request_id", reqID),
+				// zap.String("request_id", reqID),
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.Int("status", sw.status),
-				zap.Int("bytes", sw.bytes),
+				// zap.Int("bytes", sw.bytes),
 				zap.Duration("latency", time.Since(start)),
-				zap.String("remote_addr", r.RemoteAddr),
-				zap.String("user_agent", r.UserAgent()),
+				// zap.String("remote_addr", r.RemoteAddr),
+				// zap.String("user_agent", r.UserAgent()),
 			)
 		})
 	}
