@@ -1,1 +1,33 @@
 @import "tailwindcss";
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #e7edf7;
+  background: #0d1523;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: #0d1523; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+.app-shell { min-height: 100vh; background: #0d1523; }
+.app-header { background: #111d2d; border-bottom: 1px solid #223149; box-shadow: 0 8px 24px rgb(0 0 0 / 16%); }
+.app-card { background: #142235; border: 1px solid #25364d; border-radius: 18px; box-shadow: 0 16px 40px rgb(0 0 0 / 18%); }
+.app-input { background: #0f1b2b; border: 1px solid #2a3b54; color: #e7edf7; border-radius: 12px; }
+.app-input::placeholder { color: #71819a; }
+.app-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgb(59 130 246 / 18%); }
+.primary-button { background: #2878e8; color: white; border-radius: 12px; transition: background .2s, transform .2s; }
+.primary-button:hover { background: #1f68cc; transform: translateY(-1px); }
+.soft-button { background: #1c3049; color: #b9c9df; border-radius: 12px; }
+.soft-button:hover { background: #25405f; color: white; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; border-radius: 999px; background: #245da7; color: #dbeafe; font-weight: 700; }
+.status-dot { width: 9px; height: 9px; border-radius: 999px; background: #31c48d; box-shadow: 0 0 0 3px #142235; }
+.chat-pattern { background-color: #0d1827; background-image: radial-gradient(rgb(77 104 137 / 10%) 1px, transparent 1px); background-size: 22px 22px; }
+.message-in { background: #1b2a3d; color: #dbe6f5; border: 1px solid #293d56; border-radius: 6px 16px 16px 16px; }
+.message-out { background: #245545; color: #e2f7ed; border-radius: 16px 6px 16px 16px; }
+.scrollbar-thin::-webkit-scrollbar { width: 7px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #2a3d57; border-radius: 999px; }

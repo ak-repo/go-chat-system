@@ -12,6 +12,7 @@ import {
   type FriendRequest,
   type User,
 } from '../api';
+import { appName } from '../config/app';
 
 export default function FriendsPage() {
   const { user, logout } = useAuth();
@@ -118,23 +119,27 @@ export default function FriendsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+      <div className="app-shell flex items-center justify-center">
+        <div className="text-lg text-slate-300">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-shell">
       {/* Header */}
-      <header className="bg-white shadow">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold">Chat App</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-gray-600">{user?.username}</span>
+      <header className="app-header">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="avatar h-10 w-10 text-lg">{appName.charAt(0).toUpperCase()}</div>
+            <h1 className="text-lg sm:text-xl font-bold tracking-tight">{appName}</h1>
+          </div>
+          <div className="flex items-center gap-3 sm:gap-5">
+            <span className="hidden sm:block text-sm text-slate-300">{user?.username}</span>
+            <button onClick={() => navigate('/profile')} className="soft-button px-3 py-2 text-sm">Profile</button>
             <button
               onClick={handleLogout}
-              className="text-sm text-red-600 hover:underline"
+              className="text-sm text-slate-400 hover:text-red-300"
             >
               Logout
             </button>
@@ -142,35 +147,40 @@ export default function FriendsPage() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 py-6">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+        <div className="mb-8">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-400">Your network</p>
+          <h2 className="mt-2 text-3xl font-bold text-white">Stay connected</h2>
+          <p className="mt-2 text-slate-400">Manage your friends and start a conversation.</p>
+        </div>
         {/* Tabs */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex flex-wrap gap-2 mb-6 rounded-2xl border border-[#25364d] bg-[#111d2d] p-2">
           <button
             onClick={() => setActiveTab('friends')}
-            className={`px-4 py-2 rounded-md ${
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
               activeTab === 'friends'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-200 text-gray-700'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30'
+                : 'text-slate-400 hover:bg-[#1c3049] hover:text-white'
             }`}
           >
             Friends ({friends.length})
           </button>
           <button
             onClick={() => setActiveTab('requests')}
-            className={`px-4 py-2 rounded-md ${
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
               activeTab === 'requests'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-200 text-gray-700'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30'
+                : 'text-slate-400 hover:bg-[#1c3049] hover:text-white'
             }`}
           >
             Requests ({requests.filter((r) => r.Status === 'pending').length})
           </button>
           <button
             onClick={() => setActiveTab('search')}
-            className={`px-4 py-2 rounded-md ${
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${
               activeTab === 'search'
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-200 text-gray-700'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30'
+                : 'text-slate-400 hover:bg-[#1c3049] hover:text-white'
             }`}
           >
             Find Friends
@@ -178,34 +188,36 @@ export default function FriendsPage() {
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
+          <div className="mb-4 rounded-xl border border-red-900/60 bg-red-950/40 p-3 text-red-300">
             {error}
           </div>
         )}
 
         {/* Friends List */}
         {activeTab === 'friends' && (
-          <div className="bg-white rounded-lg shadow">
+          <div className="app-card overflow-hidden">
             {friends.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                No friends yet. Find some friends!
+              <div className="p-12 text-center text-slate-400">
+                <div className="mx-auto mb-4 avatar h-14 w-14 text-2xl">+</div>
+                <p className="font-semibold text-slate-200">Your friend list is empty</p>
+                <p className="mt-1 text-sm">Find someone to start chatting.</p>
               </div>
             ) : (
-              <ul className="divide-y">
+              <ul className="divide-y divide-[#25364d]">
                 {friends.map((friend) => (
                   <li
                     key={friend.FriendID}
-                    className="p-4 flex items-center justify-between"
+                    className="flex items-center justify-between gap-4 p-5 transition-colors hover:bg-[#182a40]"
                   >
                     <div>
-                      <div className="font-medium">{friend.FriendName}</div>
-                      <div className="text-sm text-gray-500">
+                      <div className="flex items-center gap-3"><div className="avatar h-11 w-11">{friend.FriendName.charAt(0).toUpperCase()}</div><div><div className="font-semibold text-white">{friend.FriendName}</div>
+                      <div className="text-sm text-slate-400">
                         {friend.FriendEmail}
-                      </div>
+                      </div></div></div>
                     </div>
                     <button
                       onClick={() => handleChat(friend.FriendID)}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                      className="primary-button px-4 py-2 text-sm font-semibold"
                     >
                       Chat
                     </button>
@@ -218,38 +230,38 @@ export default function FriendsPage() {
 
         {/* Friend Requests */}
         {activeTab === 'requests' && (
-          <div className="bg-white rounded-lg shadow">
+          <div className="app-card overflow-hidden">
             {requests.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
+              <div className="p-12 text-center text-slate-400">
                 No friend requests
               </div>
             ) : (
-              <ul className="divide-y">
+              <ul className="divide-y divide-[#25364d]">
                 {requests
                   .filter((r) => r.Status === 'pending')
                   .map((request) => (
                     <li
                       key={request.ID}
-                      className="p-4 flex items-center justify-between"
+                      className="flex items-center justify-between gap-4 p-5 hover:bg-[#182a40]"
                     >
                       <div>
-                        <div className="font-medium">
+                        <div className="font-semibold text-white">
                           {request.FriendName}
                         </div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-slate-400">
                           {request.FriendEmail}
                         </div>
                       </div>
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleAcceptRequest(request)}
-                          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                          className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
                         >
                           Accept
                         </button>
                         <button
                           onClick={() => handleRejectRequest(request)}
-                          className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                          className="rounded-xl border border-red-800 px-3 py-2 text-sm font-semibold text-red-300 hover:bg-red-950/60"
                         >
                           Reject
                         </button>
@@ -264,43 +276,43 @@ export default function FriendsPage() {
         {/* Search Users */}
         {activeTab === 'search' && (
           <div className="space-y-4">
-            <div className="flex gap-2">
+            <div className="flex gap-2 rounded-2xl border border-[#25364d] bg-[#111d2d] p-2">
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder="Search by username or email..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="app-input min-w-0 flex-1 px-4 py-3"
               />
               <button
                 onClick={handleSearch}
                 disabled={searching}
-                className="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+                className="primary-button px-5 py-3 text-sm font-semibold disabled:opacity-50"
               >
                 {searching ? 'Searching...' : 'Search'}
               </button>
             </div>
 
-            <div className="bg-white rounded-lg shadow">
+            <div className="app-card overflow-hidden">
               {searchResults.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">
+                <div className="p-12 text-center text-slate-400">
                   {searchQuery ? 'No users found' : 'Enter a search term'}
                 </div>
               ) : (
-                <ul className="divide-y">
+                <ul className="divide-y divide-[#25364d]">
                   {searchResults.map((result) => (
                     <li
                       key={result.id}
-                      className="p-4 flex items-center justify-between"
+                      className="flex items-center justify-between gap-4 p-5 hover:bg-[#182a40]"
                     >
                       <div>
-                        <div className="font-medium">{result.username}</div>
-                        <div className="text-sm text-gray-500">{result.email}</div>
+                        <div className="font-semibold text-white">{result.username}</div>
+                        <div className="text-sm text-slate-400">{result.email}</div>
                       </div>
                       <button
                         onClick={() => handleSendRequest(result.id)}
-                        className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                        className="primary-button px-4 py-2 text-sm font-semibold"
                       >
                         Add Friend
                       </button>

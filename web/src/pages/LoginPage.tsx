@@ -26,12 +26,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold text-center mb-6">Login</h1>
+    <div className="app-shell flex min-h-screen items-center justify-center p-4">
+      <div className="app-card w-full max-w-md p-7 sm:p-9">
+        <div className="mb-8 text-center"><div className="avatar mx-auto mb-4 h-14 w-14 text-xl">C</div><p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-400">Welcome back</p><h1 className="mt-2 text-2xl font-bold text-white">Sign in</h1></div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">
+          <div className="mb-4 rounded-xl border border-red-900/60 bg-red-950/40 p-3 text-red-300">
             {error}
           </div>
 
@@ -39,7 +39,7 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-slate-300">
               Email
             </label>
             <input
@@ -47,12 +47,12 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="app-input mt-2 w-full px-3 py-3"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-slate-300">
               Password
             </label>
             <input
@@ -60,24 +60,24 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="app-input mt-2 w-full px-3 py-3"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 px-4 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+            className="primary-button w-full px-4 py-3 font-semibold disabled:opacity-50"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
 
-        <div className="mt-3 text-right"><Link to="/recover" className="text-sm text-purple-600 hover:underline">Forgot password?</Link></div>
+        <div className="mt-4 text-right"><Link to="/recover" className="text-sm text-blue-400 hover:text-blue-300">Forgot password?</Link></div>
 
-        <p className="mt-4 text-center text-gray-600">
+        <p className="mt-6 text-center text-sm text-slate-400">
           Don't have an account?{' '}
-          <Link to="/register" className="text-purple-600 hover:underline">
+          <Link to="/register" className="font-semibold text-blue-400 hover:text-blue-300">
             Register
           </Link>
         </p>
