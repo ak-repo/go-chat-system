@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+
 	"github.com/ak-repo/go-chat-system/internal/domain/model"
 	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/google/uuid"
@@ -26,16 +27,34 @@ func scanConversation(row pgx.Row) (*model.Conversation, error) {
 	return &c, err
 }
 func (r *ConversationRepositoryImpl) CreateOrGetDirect(ctx context.Context, a, b string) (*model.Conversation, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, errs.Wrap("repository.Conversation.Begin", err)
+	}
+	defer tx.Rollback(ctx)
+
 	id := uuid.NewString()
-	_, err := r.db.Exec(ctx, `INSERT INTO conversations(id,kind,user_one_id,user_two_id) VALUES($1,'direct',LEAST($2::uuid,$3::uuid),GREATEST($2::uuid,$3::uuid)) ON CONFLICT DO NOTHING`, id, a, b)
+	_, err = tx.Exec(ctx, `INSERT INTO conversations(id,kind,user_one_id,user_two_id) VALUES($1,'direct',LEAST($2::uuid,$3::uuid),GREATEST($2::uuid,$3::uuid)) ON CONFLICT DO NOTHING`, id, a, b)
 	if err != nil {
 		return nil, errs.Wrap("repository.Conversation.Create", err)
 	}
-	_, err = r.db.Exec(ctx, `INSERT INTO conversation_members(conversation_id,user_id) SELECT c.id,x.user_id FROM conversations c CROSS JOIN (VALUES($2::uuid),($3::uuid)) x(user_id) WHERE c.user_one_id=LEAST($2::uuid,$3::uuid) AND c.user_two_id=GREATEST($2::uuid,$3::uuid) ON CONFLICT DO NOTHING`, id, a, b)
+
+	c, err := scanConversation(tx.QueryRow(ctx, `SELECT id,kind,user_one_id,user_two_id,created_at,modified_at FROM conversations WHERE user_one_id=LEAST($1::uuid,$2::uuid) AND user_two_id=GREATEST($1::uuid,$2::uuid) AND kind='direct'`, a, b))
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, errs.ErrNotFound
+		}
+		return nil, errs.Wrap("repository.Conversation.GetOrCreate", err)
+	}
+
+	_, err = tx.Exec(ctx, `INSERT INTO conversation_members(conversation_id,user_id) VALUES($1,$2::uuid),($1,$3::uuid) ON CONFLICT DO NOTHING`, c.ID, a, b)
 	if err != nil {
 		return nil, errs.Wrap("repository.Conversation.Member", err)
 	}
-	return r.Get(ctx, id, a)
+	if err = tx.Commit(ctx); err != nil {
+		return nil, errs.Wrap("repository.Conversation.Commit", err)
+	}
+	return c, nil
 }
 func (r *ConversationRepositoryImpl) Get(ctx context.Context, id, uid string) (*model.Conversation, error) {
 	c, e := scanConversation(r.db.QueryRow(ctx, `SELECT c.id,c.kind,c.user_one_id,c.user_two_id,c.created_at,c.modified_at FROM conversations c JOIN conversation_members m ON m.conversation_id=c.id AND m.user_id=$2 AND m.left_at IS NULL WHERE c.id=$1`, id, uid))

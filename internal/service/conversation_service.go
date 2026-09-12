@@ -7,6 +7,8 @@ import (
 	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
 	"github.com/ak-repo/go-chat-system/internal/transport/middleware"
+	"github.com/go-chi/chi"
+	"github.com/google/uuid"
 	"net/http"
 	"strconv"
 	"strings"
@@ -102,7 +104,11 @@ func (s *ConversationServiceImpl) Get(w http.ResponseWriter, r *http.Request) (i
 	if e != nil {
 		return 401, nil, e
 	}
-	c, e := s.repo.Get(r.Context(), r.PathValue("conversationID"), uid)
+	conversationID := chi.URLParam(r, "conversationID")
+	if uuid.Validate(conversationID) != nil {
+		return 400, nil, errs.ErrValidation
+	}
+	c, e := s.repo.Get(r.Context(), conversationID, uid)
 	if e != nil {
 		return 404, nil, e
 	}

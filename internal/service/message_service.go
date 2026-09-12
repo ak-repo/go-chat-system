@@ -14,6 +14,7 @@ import (
 	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
 	"github.com/ak-repo/go-chat-system/internal/transport/middleware"
+	"github.com/go-chi/chi"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -326,7 +327,11 @@ func (s *MessageServiceImpl) History(w http.ResponseWriter, r *http.Request) (in
 	if s.conversationRepo == nil {
 		return 500, nil, errs.ErrInternal
 	}
-	c, e := s.conversationRepo.Get(r.Context(), r.PathValue("conversationID"), uid)
+	conversationID := chi.URLParam(r, "conversationID")
+	if uuid.Validate(conversationID) != nil {
+		return 400, nil, errs.ErrValidation
+	}
+	c, e := s.conversationRepo.Get(r.Context(), conversationID, uid)
 	if e != nil {
 		return 404, nil, e
 	}
@@ -367,7 +372,7 @@ func (s *MessageServiceImpl) Send(w http.ResponseWriter, r *http.Request) (int, 
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&q) != nil {
 		return 400, nil, errs.ErrValidation
 	}
-	if pathID := r.PathValue("conversationID"); pathID != "" {
+	if pathID := chi.URLParam(r, "conversationID"); pathID != "" {
 		if q.ConversationID != "" && q.ConversationID != pathID {
 			return 400, nil, errs.ErrValidation
 		}
@@ -375,6 +380,9 @@ func (s *MessageServiceImpl) Send(w http.ResponseWriter, r *http.Request) (int, 
 	}
 	q.Content = strings.TrimSpace(q.Content)
 	if q.ConversationID == "" || q.Content == "" || len(q.Content) > utils.MaxMessageLength {
+		return 400, nil, errs.ErrValidation
+	}
+	if uuid.Validate(q.ConversationID) != nil {
 		return 400, nil, errs.ErrValidation
 	}
 	if len(q.ClientMessageID) > 128 || len(q.ReplyToMessageID) > 128 {
@@ -441,10 +449,14 @@ func (s *MessageServiceImpl) Edit(w http.ResponseWriter, r *http.Request) (int, 
 	if !ok {
 		return 500, nil, errs.ErrInternal
 	}
-	if e = mr.EditMessage(r.Context(), r.PathValue("messageID"), uid, strings.TrimSpace(q.Content)); e != nil {
+	messageID := chi.URLParam(r, "messageID")
+	if uuid.Validate(messageID) != nil {
+		return 400, nil, errs.ErrValidation
+	}
+	if e = mr.EditMessage(r.Context(), messageID, uid, strings.TrimSpace(q.Content)); e != nil {
 		return 404, nil, e
 	}
-	return 200, utils.SuccessResponse(map[string]string{"id": r.PathValue("messageID"), "content": q.Content}), nil
+	return 200, utils.SuccessResponse(map[string]string{"id": messageID, "content": q.Content}), nil
 }
 func (s *MessageServiceImpl) Delete(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
 	uid, e := actor(r)
@@ -455,10 +467,14 @@ func (s *MessageServiceImpl) Delete(w http.ResponseWriter, r *http.Request) (int
 	if !ok {
 		return 500, nil, errs.ErrInternal
 	}
-	if e = mr.DeleteMessage(r.Context(), r.PathValue("messageID"), uid); e != nil {
+	messageID := chi.URLParam(r, "messageID")
+	if uuid.Validate(messageID) != nil {
+		return 400, nil, errs.ErrValidation
+	}
+	if e = mr.DeleteMessage(r.Context(), messageID, uid); e != nil {
 		return 404, nil, e
 	}
-	return 200, utils.SuccessResponse(map[string]string{"id": r.PathValue("messageID"), "status": "deleted"}), nil
+	return 200, utils.SuccessResponse(map[string]string{"id": messageID, "status": "deleted"}), nil
 }
 func (s *MessageServiceImpl) Delivery(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
 	uid, e := actor(r)
@@ -496,7 +512,10 @@ func (s *MessageServiceImpl) Read(w http.ResponseWriter, r *http.Request) (int, 
 	if json.NewDecoder(r.Body).Decode(&q) != nil || q.MessageID == "" {
 		return 400, nil, errs.ErrValidation
 	}
-	cid := r.PathValue("conversationID")
+	cid := chi.URLParam(r, "conversationID")
+	if uuid.Validate(cid) != nil {
+		return 400, nil, errs.ErrValidation
+	}
 	ok, e := s.conversationRepo.IsMember(r.Context(), cid, uid)
 	if e != nil || !ok {
 		return 403, nil, errs.ErrNotMember
