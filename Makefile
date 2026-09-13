@@ -49,6 +49,16 @@ check: ## Check required tools and config
 build: check ## Build Go binary
 	go build -o bin/server ./cmd/server
 
+.PHONY: test
+test: ## Run Go unit tests and static checks
+	go vet ./...
+	go test ./...
+
+.PHONY: test-integration
+test-integration: ## Run PostgreSQL repository integration tests
+	@test -n "$(TEST_DATABASE_URL)" || { echo "TEST_DATABASE_URL is required"; exit 1; }
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -tags=integration ./internal/repository/...
+
 .PHONY: run
 run: check ## Run application locally
 	go run ./cmd/server

@@ -320,8 +320,9 @@ with the current client and existing accounts. Verification tokens are
 implemented, but `verified_at` is informational rather than an authentication
 gate.
 - Distributed WebSocket fan-out/presence for multiple backend instances.
-- Automated frontend tests, PostgreSQL repository/integration tests, production
-  application containers, and Kubernetes manifests.
+- Automated frontend tests, production application containers, and Kubernetes
+  manifests. PostgreSQL repository integration tests are available with the
+  `integration` build tag and require `TEST_DATABASE_URL`.
 
 ## 12. Configuration
 
@@ -340,11 +341,11 @@ default to `http://<CORS.host>:<CORS.port>`.
 
 ## 13. Tests and verification
 
-Current Go tests cover message service authorization/persistence behavior,
-friend-request authenticated-actor behavior, WebSocket message parsing and
-delivery/ack/error behavior, JWT refresh validation, response wrappers, error
-helpers, and recovery middleware. There are no automated frontend tests or
-PostgreSQL repository/integration tests in the repository.
+Current Go tests cover service authorization, validation, persistence behavior,
+WebSocket message parsing and delivery/ack/error behavior, JWT refresh
+validation, response wrappers, error helpers, and recovery middleware.
+Repository integration tests cover PostgreSQL persistence and transactions when
+run with the `integration` build tag. There are no automated frontend tests.
 
 Repository verification commands are:
 
