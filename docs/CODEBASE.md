@@ -14,7 +14,9 @@ verification token flows, authenticated user search, friend requests and
 friendships, blocking, direct conversations, direct message history and
 mutations, delivery/read/unread state, and direct real-time messaging over
 authenticated WebSockets. Verification is not an authentication gate, and
-recovery/verification delivery is development-only.
+unverified accounts cannot sign in. Email verification and password recovery
+support configurable SMTP delivery; without SMTP configuration, the server uses
+the development-only in-memory delivery adapter.
 
 The normal backend dependency direction is:
 
@@ -111,21 +113,27 @@ The REST wrapper returns `{"status":"ok","data":...}` for data responses,
 - `SocketContext` connects the socket while authenticated and exposes socket
   actions/listeners to pages.
 - `App.tsx` routes `/login`, `/register`, `/recover`, `/verify`, `/friends`,
-  `/profile`, and `/chat/:userId`, and applies public/protected route guards.
+  `/profile`, `/conversations`, `/users/:userId`, and `/chat/:userId`, and applies
+  public/protected route guards.
 - `FriendsPage` implements friend listing, incoming requests, and user search.
 - `ChatPage` creates/opens a direct conversation, loads paginated history,
-  displays direct messages and statuses, sends messages with client IDs,
-  retries failed sends, marks incoming messages read, and displays typing state.
+  displays direct messages and persisted statuses, sends messages with client
+  IDs, retries failed sends, supports edit/delete/reply, marks incoming messages
+  read, displays typing state, and exposes per-user conversation controls.
+- `ConversationsPage` lists active/archived conversations, preferences, unread
+  counts, and the active-conversation mark-all-as-read action.
 
 The frontend REST base URL is currently hard-coded to
 `http://localhost:8002/api/v1` in `web/src/api/client.ts`.
 
 ## 6. Database structure
 
-The final schema is defined by the single fresh-install migration
-`migrations/20260829120500_canonical_schema.sql`. It replaces the previously
-split Phase 1 migration set and must be applied to a database with no prior
-versions from that set. Its `Down` is intentionally destructive.
+The fresh-install schema starts with
+`migrations/20260829120500_canonical_schema.sql`; additive changes are defined by
+later migrations, including `migrations/20260925090000_conversation_user_state.sql`.
+Never edit an already-deployed migration. The canonical migration's `Down` is
+intentionally destructive; the conversation-state migration's `Down` removes
+only the new preference data/table.
 
 | Table | Current purpose |
 | --- | --- |
@@ -138,6 +146,7 @@ versions from that set. Its `Down` is intentionally destructive.
 | `account_tokens` | One-time hashed verification and password-reset tokens. |
 | `conversations` | Currently direct conversations with a canonical user pair. |
 | `conversation_members` | Active/left membership for conversations. |
+| `conversation_user_state` | Per-member archive, hide, pin, and mute preferences. |
 | `message_deliveries` | Per-recipient monotonic sent/delivered/read/failed state. |
 | `conversation_read_state` | Per-user last-read message and timestamp. |
 
@@ -153,9 +162,10 @@ conversation schema currently permits only direct conversations.
 ## 7. Authentication
 
 Registration validates required fields, email format, and an eight-character
-minimum password, hashes with bcrypt, creates a user and session, and returns
-access and refresh JWTs. Login does the same after verifying bcrypt. Refresh
-validates the JWT, rotates the stored session, and issues both new tokens.
+minimum password, hashes with bcrypt, creates an unverified user, and requests
+verification delivery. It does not issue a session or JWT. Login verifies
+bcrypt and requires `verified_at`; refresh also checks verification before
+rotating the persisted session and issuing new tokens.
 Logout validates the authenticated user's refresh token and revokes its session;
 password changes/resets and deactivation revoke the user's sessions.
 
@@ -169,9 +179,11 @@ client-supplied `sender_id` with the authenticated context identity.
 
 **Implemented with limitations:** refresh-token hashes and session state are
 stored server-side and checked on protected routes and by the WebSocket hub.
-Browser tokens and the stored user remain in localStorage. Recovery and
-verification use development-only delivery, and verification is informational:
-`verified_at` is not enforced as an authentication gate.
+Email verification and password recovery use `SMTPDelivery` when SMTP is
+configured. Runtime keys are `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+`SMTP_PASSWORD`, `EMAIL_FROM`, and `APP_URL`; otherwise the development adapter
+records the token in memory and cannot deliver it to a user. Browser tokens and
+the stored user remain in localStorage.
 
 ## 8. REST APIs
 
@@ -182,13 +194,13 @@ access JWT. Successful nil responses are encoded as `{"message":"ok"}`.
 
 | Method/path | Body | Success |
 | --- | --- | --- |
-| `POST /auth/register` | `username`, `email`, `password` | `201`; user, access `token`, `exp` |
-| `POST /auth/login` | `email`, `password` | `200`; user, access/refresh tokens and expiries |
-| `POST /auth/refresh` | `refresh_token` | `200`; new access/refresh tokens and expiries |
+| `POST /auth/register` | `username`, `email`, `password` | `201`; user and `verification_required: true`; no session is issued. |
+| `POST /auth/login` | `email`, `password` | `200`; user, access/refresh tokens and expiries; `403` until verified. |
+| `POST /auth/refresh` | `refresh_token` | `200`; new access/refresh tokens and expiries; verification is rechecked. |
 | `POST /auth/logout` | `refresh_token` | Revokes the authenticated session. |
-| `POST /auth/password-reset/request` | `email` | Generic recovery response; development delivery records the token. |
+| `POST /auth/password-reset/request` | `email` | Generic response; configured SMTP sends a reset link. |
 | `POST /auth/password-reset/confirm` | `token`, `password` | Consumes token, changes password, and revokes sessions. |
-| `POST /auth/verification/request` | `email` | Generic verification response; development delivery records the token. |
+| `POST /auth/verification/request` | `email` | Generic response; configured SMTP sends a verification link. |
 | `POST /auth/verification/confirm` | `token` | Consumes token and sets `users.verified_at`. |
 
 ### Protected application routes
@@ -197,7 +209,8 @@ access JWT. Successful nil responses are encoded as `{"message":"ok"}`.
 | --- | --- | --- |
 | `GET /users` | `filter`, `limit` (default 20, max 100) | Username/email search; filters shorter than two characters return empty. |
 | `GET /users/me` | none | Returns the authenticated user's profile DTO. |
-| `PATCH /users/me` | `username`, `email` | Updates the authenticated user's profile fields. |
+| `GET /users/{userID}` | none | Returns public profile fields (`id`, `username`) for an active user. |
+| `PATCH /users/me` | `username`, `email` | Updates profile; an email change clears verification and revokes sessions, then sends verification. |
 | `POST /users/me/change-password` | `password` | Changes password and revokes all sessions. |
 | `DELETE /users/me` | none | Soft-deactivates the account and revokes all sessions. |
 | `GET /friends` | `limit` (20/100), `offset` (0+) | Lists the authenticated user's friends. |
@@ -209,18 +222,23 @@ access JWT. Successful nil responses are encoded as `{"message":"ok"}`.
 | `POST /blocks/` | `{target}` | Creates a block, removes friendship rows, marks related requests blocked. |
 | `POST /blocks/unblock` | `{target}` | Removes the authenticated user's block row. |
 | `POST /conversations` | `{user_id}` | Creates or gets a direct conversation; requires friendship and no block. |
-| `GET /conversations` | `limit` (50/100), `offset` (0+) | Lists active conversations for the authenticated member. |
+| `GET /conversations` | `limit` (50/100), `offset` (0+), `archived` (optional bool) | Lists non-hidden active or archived conversations for the authenticated member. |
 | `GET /conversations/{conversationID}` | none | Gets a conversation only for an active member. |
+| `PATCH /conversations/{conversationID}/preferences` | `archived`, `pinned`, `mute_minutes` (at least one) | Updates the acting member's preferences; mute `0` clears mute. |
+| `DELETE /conversations/{conversationID}` | none | Hides the conversation only from the acting member; history is retained. Reopening via create/get restores that member's view. |
 | `GET /conversations/{conversationID}/messages` | `limit` (50/100), `offset` (0+) | Returns authorized direct conversation history. |
 | `POST /conversations/{conversationID}/messages` | `content`, optional client/reply IDs | Persists an authorized message with duplicate-safe client ID handling. |
 | `PATCH /messages/{messageID}` | `{content}` | Sender-only message edit. |
 | `DELETE /messages/{messageID}` | none | Sender-only soft delete. |
 | `POST /messages/delivery` | `{message_id}`, `status` (`delivered`/`read`) | Recipient-only monotonic delivery update. |
-| `POST /conversations/{conversationID}/read` | `{message_id}` | Marks the recipient's conversation messages through a message as read. |
+| `POST /conversations/{conversationID}/read` | `{message_id}` | Marks the recipient's conversation messages through a message as read; read cursor cannot move backwards. |
 | `GET /unread` | none | Returns unread counts keyed by conversation ID. |
+| `POST /unread/read-all` | none | Marks incoming messages read in active (non-archived, non-hidden) conversations and returns receipt targets. |
 | `GET /ws` | authenticated upgrade | Opens a WebSocket connection. |
 
-Conversation access and message history/send operations check authenticated
+Message history includes the persisted per-recipient status. WebSocket delivery
+status means the recipient client received the event and sent a server-authorized
+receipt; “sent” means persisted. Conversation access and message history/send operations check authenticated
 membership and the direct friendship/block relationship. Message edit/delete
 is sender-only; replies are available through the message send contract and
 WebSocket mutation path. API errors are mostly stable only by HTTP status and
@@ -277,16 +295,18 @@ hub is process-local; Redis is not used for WebSocket fan-out or presence.
   120/minute protected user limit).
 - User search, friend requests, mutual friendships, friend listing, blocking,
   and unblocking.
-- Direct conversation creation/list/get, membership checks, message persistence
-  and REST history retrieval.
-- Message edit/delete/reply, client-idempotent sends, durable delivery/read
-  state, and unread summaries through REST and service/repository paths.
+- Direct conversation creation/list/get, per-user archive/hide/pin/mute state,
+  membership checks, message persistence, and REST history retrieval.
+- Message edit/delete/reply, client-idempotent sends, persisted status in history,
+  durable delivery/read state, unread summaries, and mark-all-read for active
+  conversations through REST and service/repository paths.
 - Authenticated direct WebSocket delivery and mutation/status events, sender
   identity protection, persistence ack/error, presence broadcast, ping/pong,
   limits, and multiple connections per user.
-- React login/register, recovery/verification, profile, friends/search/request,
-  and direct chat screens with pagination, optimistic send reconciliation,
-  retry, read marking, and unread loading.
+- React login/register, recovery/verification, private/public profile, friends/
+  search/request, conversation list/preferences, and direct chat screens with
+  pagination, optimistic send reconciliation, retry, realtime mutations, status
+  updates, read marking, and unread loading.
 - PostgreSQL/Redis health checks and local Docker infrastructure.
 
 ## 11. Partial, scaffolded, and missing features
@@ -296,13 +316,10 @@ hub is process-local; Redis is not used for WebSocket fan-out or presence.
 - Typing indicators are membership-authorized and display in direct chat, but
   are ephemeral and not persisted.
 - Presence is emitted by the hub but not represented in frontend state.
-- REST and WebSocket mutation/status contracts exist, but the chat UI does not
-  yet render edit/delete/reply controls or all inbound mutation events.
-- Soft delete is modeled but not consistently enforced.
 - Refresh lifecycle, localStorage token storage, and hard-coded frontend URL
   are usable locally but incomplete for production.
-- Recovery and verification flows are operational, but delivery is only the
-  in-memory development adapter and verification is not enforced.
+- SMTP must be configured for usable email delivery; without it the runtime uses
+  the in-memory development adapter.
 
 ### Scaffolded
 
@@ -315,10 +332,6 @@ hub is process-local; Redis is not used for WebSocket fan-out or presence.
 - Group management and membership persistence/UI.
 - Offline notifications and queued delivery while a recipient is disconnected.
 
-Registration deliberately does not require email verification for compatibility
-with the current client and existing accounts. Verification tokens are
-implemented, but `verified_at` is informational rather than an authentication
-gate.
 - Distributed WebSocket fan-out/presence for multiple backend instances.
 - Automated frontend tests, production application containers, and Kubernetes
   manifests. PostgreSQL repository integration tests are available with the
@@ -329,10 +342,10 @@ gate.
 `internal/platform/config/config.go` reads `config.yaml` from the working
 directory or `./config/`, then applies non-empty overrides for `DB_HOST`,
 `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `REDIS_HOST`, `REDIS_PORT`,
-`JWT_SECRET`, and `PORT`.
+`JWT_SECRET`, `PORT`, and the SMTP/email variables listed above.
 
-Configuration sections are `database`, `jwt`, `server`, `CORS`, `logging`, and
-`redis`. `config/config.example.yaml` documents local defaults. Pool duration
+Configuration sections are `database`, `jwt`, `server`, `CORS`, `logging`,
+`redis`, and `email`. `config/config.example.yaml` documents local defaults. Pool duration
 fields are declared, but the current PostgreSQL setup applies fixed lifetime
 and idle values instead. Do not expose `config/config.yaml` secrets.
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,9 @@ type fakeConversationRepo struct {
 	listedOffset int
 	createdUser  string
 	createdOther string
+	archived     bool
+	pinned       bool
+	hidden       bool
 }
 
 func (f *fakeConversationRepo) CreateOrGetDirect(_ context.Context, a, b string) (*model.Conversation, error) {
@@ -47,6 +51,23 @@ func (f *fakeConversationRepo) List(_ context.Context, user string, limit, offse
 
 func (f *fakeConversationRepo) IsMember(context.Context, string, string) (bool, error) {
 	return true, f.memberErr
+}
+func (f *fakeConversationRepo) ListWithPreferences(ctx context.Context, uid string, limit, offset int, archived bool) ([]*model.Conversation, error) {
+	f.archived = archived
+	return f.List(ctx, uid, limit, offset)
+}
+func (f *fakeConversationRepo) UpdatePreferences(_ context.Context, _, _ string, archived, pinned *bool, _ *time.Time) error {
+	if archived != nil {
+		f.archived = *archived
+	}
+	if pinned != nil {
+		f.pinned = *pinned
+	}
+	return f.err
+}
+func (f *fakeConversationRepo) Hide(context.Context, string, string) error {
+	f.hidden = true
+	return f.err
 }
 
 func requestWithRouteParam(id, userID string) *http.Request {
@@ -140,5 +161,24 @@ func TestConversationCreatePersistsTrimmedTarget(t *testing.T) {
 	status, _, err := NewConversationService(repo, fakeFriendRepo{areFriends: true}, fakeBlockRepo{}).Create(httptest.NewRecorder(), authenticatedRequest(http.MethodPost, `{"user_id":" user-2 "}`, "user-1"))
 	if status != http.StatusOK || err != nil || repo.createdUser != "user-1" || repo.createdOther != "user-2" {
 		t.Fatalf("expected conversation creation, got %d %v %#v", status, err, repo)
+	}
+}
+
+func TestConversationPreferencesAndHideUseAuthenticatedUser(t *testing.T) {
+	id := uuid.NewString()
+	repo := &fakeConversationRepo{conversation: &model.Conversation{ID: id}}
+	rc := chi.NewRouteContext()
+	rc.URLParams.Add("conversationID", id)
+	req := httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(`{"archived":true,"pinned":true}`))
+	ctx := context.WithValue(req.Context(), middleware.UserIDKey, "user-1")
+	req = req.WithContext(context.WithValue(ctx, chi.RouteCtxKey, rc))
+	status, _, err := NewConversationService(repo).Preferences(httptest.NewRecorder(), req)
+	if status != http.StatusOK || err != nil || !repo.archived || !repo.pinned {
+		t.Fatalf("preferences not updated: status=%d err=%v repo=%#v", status, err, repo)
+	}
+	req = requestWithRouteParam(id, "user-1")
+	status, _, err = NewConversationService(repo).Delete(httptest.NewRecorder(), req)
+	if status != http.StatusOK || err != nil || !repo.hidden {
+		t.Fatalf("conversation was not hidden: status=%d err=%v", status, err)
 	}
 }

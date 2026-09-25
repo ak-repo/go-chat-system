@@ -32,6 +32,7 @@ type MessageHTTPService interface {
 	Delivery(http.ResponseWriter, *http.Request) (int, *utils.APIResponse, error)
 	Read(http.ResponseWriter, *http.Request) (int, *utils.APIResponse, error)
 	Unread(http.ResponseWriter, *http.Request) (int, *utils.APIResponse, error)
+	ReadAll(http.ResponseWriter, *http.Request) (int, *utils.APIResponse, error)
 }
 
 type RealtimeEvent struct{ Event, ConversationID, MessageID, Content, ReceiverID, Status string }
@@ -410,7 +411,7 @@ func (s *MessageServiceImpl) Send(w http.ResponseWriter, r *http.Request) (int, 
 	if e = s.authorizeDirect(r.Context(), uid, other); e != nil {
 		return 403, nil, e
 	}
-	m := &model.Message{ID: uuid.NewString(), SenderID: uid, ReceiverID: other, Body: strings.TrimSpace(q.Content), ConversationID: q.ConversationID, ClientMessageID: q.ClientMessageID, ReplyToMessageID: q.ReplyToMessageID, CreatedAt: time.Now().UTC(), ModifiedAt: time.Now().UTC()}
+	m := &model.Message{ID: uuid.NewString(), SenderID: uid, ReceiverID: other, Body: strings.TrimSpace(q.Content), ConversationID: q.ConversationID, ClientMessageID: q.ClientMessageID, ReplyToMessageID: q.ReplyToMessageID, CreatedAt: time.Now().UTC(), ModifiedAt: time.Now().UTC(), Status: "sent"}
 	if q.ReplyToMessageID != "" {
 		mr, ok := s.messageRepo.(repository.MessageMutationRepository)
 		if !ok {
@@ -547,4 +548,20 @@ func (s *MessageServiceImpl) Unread(w http.ResponseWriter, r *http.Request) (int
 		return 500, nil, e
 	}
 	return 200, utils.SuccessResponse(map[string]any{"unread": u}), nil
+}
+
+func (s *MessageServiceImpl) ReadAll(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
+	uid, e := actor(r)
+	if e != nil {
+		return 401, nil, e
+	}
+	rr, ok := s.messageRepo.(repository.MessageReadAllRepository)
+	if !ok {
+		return 500, nil, errs.ErrInternal
+	}
+	receipts, readErr := rr.MarkAllActiveRead(r.Context(), uid, time.Now().UTC())
+	if readErr != nil {
+		return 500, nil, readErr
+	}
+	return 200, utils.SuccessResponse(map[string]any{"status": "read", "receipts": receipts}), nil
 }

@@ -48,7 +48,7 @@ func Router() chi.Router {
 		v1.Group(func(pr chi.Router) {
 			pr.Use(mdware.AuthMiddlewareWithSession(func(ctx context.Context, claims *jwt.Claims) bool {
 				u, err := app.UserRepo.GetByID(ctx, claims.UserID)
-				if err != nil || u == nil {
+				if err != nil || u == nil || u.VerifiedAt == nil {
 					return false
 				}
 				sr, ok := app.UserRepo.(repository.SessionRepository)
@@ -64,12 +64,15 @@ func Router() chi.Router {
 			// Users
 			pr.Get("/users", wrapper.HTTPResponseWrapper(app.UserService.SearchUser))
 			pr.Get("/users/me", wrapper.HTTPResponseWrapper(app.UserService.GetMe))
+			pr.Get("/users/{userID}", wrapper.HTTPResponseWrapper(app.UserService.GetPublicUser))
 			pr.Patch("/users/me", wrapper.HTTPResponseWrapper(app.UserService.UpdateMe))
 			pr.Post("/users/me/change-password", wrapper.HTTPResponseWrapper(app.UserService.ChangePassword))
 			pr.Delete("/users/me", wrapper.HTTPResponseWrapper(app.UserService.Deactivate))
 			pr.Post("/conversations", wrapper.HTTPResponseWrapper(app.ConversationService.Create))
 			pr.Get("/conversations", wrapper.HTTPResponseWrapper(app.ConversationService.List))
 			pr.Get("/conversations/{conversationID}", wrapper.HTTPResponseWrapper(app.ConversationService.Get))
+			pr.Patch("/conversations/{conversationID}/preferences", wrapper.HTTPResponseWrapper(app.ConversationService.Preferences))
+			pr.Delete("/conversations/{conversationID}", wrapper.HTTPResponseWrapper(app.ConversationService.Delete))
 
 			// Friends
 			pr.Get("/friends", wrapper.HTTPResponseWrapper(app.FriendService.ListFriends))
@@ -93,6 +96,7 @@ func Router() chi.Router {
 			pr.Get("/conversations/{conversationID}/messages", wrapper.HTTPResponseWrapper(app.MessageHTTPService.History))
 			pr.Post("/conversations/{conversationID}/messages", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Send))
 			pr.Get("/unread", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Unread))
+			pr.Post("/unread/read-all", wrapper.HTTPResponseWrapper(app.MessageHTTPService.ReadAll))
 			pr.Patch("/messages/{messageID}", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Edit))
 			pr.Delete("/messages/{messageID}", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Delete))
 			pr.Post("/messages/delivery", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Delivery))
@@ -101,6 +105,10 @@ func Router() chi.Router {
 			// Websocket - higher rate limit to allow frequent connections
 			GlobalHub = websocket.NewHub(app.MessageService)
 			GlobalHub.SetSessionChecker(func(ctx context.Context, uid, sid string) bool {
+				u, userErr := app.UserRepo.GetByID(ctx, uid)
+				if userErr != nil || u == nil || u.VerifiedAt == nil {
+					return false
+				}
 				sr, ok := app.UserRepo.(repository.SessionRepository)
 				if !ok {
 					return false

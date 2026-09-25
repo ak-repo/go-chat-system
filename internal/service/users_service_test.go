@@ -54,6 +54,12 @@ func (f *fakeUserRepo) GetByID(_ context.Context, id string) (*model.User, error
 	f.profileID = id
 	return f.user, f.getErr
 }
+func (f *fakeUserRepo) GetPublicByID(_ context.Context, id string) (*model.PublicUser, error) {
+	if f.user == nil {
+		return nil, nil
+	}
+	return &model.PublicUser{ID: id, Username: f.user.Username}, nil
+}
 func (f *fakeUserRepo) CreateSession(context.Context, *model.Session) error { return f.sessionErr }
 func (f *fakeUserRepo) RotateSession(context.Context, []byte, *model.Session, time.Time) error {
 	return f.rotateErr
@@ -161,6 +167,12 @@ func TestUserRegisterLoginRefreshLogoutAndDeactivate(t *testing.T) {
 		t.Fatalf("expected invalid email, got %d %v", status, err)
 	}
 	repo.user.PasswordHash, _ = utils.HashPassword("strong-password")
+	status, _, err = service.Login(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"email":" ALICE@EXAMPLE.COM ","password":"strong-password"}`)))
+	if status != http.StatusForbidden || !errors.Is(err, errs.ErrAccountUnverified) {
+		t.Fatalf("expected verification requirement, got %d %v", status, err)
+	}
+	verifiedAt := time.Now().UTC()
+	repo.user.VerifiedAt = &verifiedAt
 	status, _, err = service.Login(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"email":" ALICE@EXAMPLE.COM ","password":"strong-password"}`)))
 	if status != http.StatusOK || err != nil {
 		t.Fatalf("expected login, got %d %v", status, err)

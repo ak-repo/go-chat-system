@@ -22,6 +22,8 @@ export interface AuthResponse {
   refresh_exp?: string;
 }
 
+export interface RegistrationResponse { user: User; verification_required: boolean }
+
 export type TokenResponse = Omit<AuthResponse, 'user'>;
 
 export interface RegisterRequest {
@@ -38,19 +40,12 @@ export interface LoginRequest {
 // Register new user
 export async function register(
   data: RegisterRequest
-): Promise<ApiResponse<AuthResponse>> {
-  const response = await apiClient.post<ApiResponse<AuthResponse>>(
+): Promise<ApiResponse<RegistrationResponse>> {
+  const response = await apiClient.post<ApiResponse<RegistrationResponse>>(
     '/auth/register',
     data
   );
   const apiResponse = toApiResponse(response.data);
-
-  if (apiResponse.success && apiResponse.data) {
-    setToken(apiResponse.data.token, apiResponse.data.exp);
-    if (apiResponse.data.refresh_token) {
-      setRefreshToken(apiResponse.data.refresh_token);
-    }
-  }
 
   return apiResponse;
 }

@@ -20,7 +20,7 @@ export default function RegisterPage() {
     setLoading(false);
 
     if (result.success) {
-      navigate('/friends', { replace: true });
+      navigate(`/verify?email=${encodeURIComponent(email.trim().toLowerCase())}`, { replace: true });
     } else {
       setError(result.error || 'Registration failed');
     }
@@ -73,7 +73,7 @@ export default function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               className="app-input mt-2 w-full px-3 py-3"
             />
           </div>

@@ -4,8 +4,18 @@ This document turns the Phase 1 checklist in
 [`../chat_application_feature_roadmap.md`](../chat_application_feature_roadmap.md)
 into an implementation and verification guide for this repository. The current
 source-of-truth inventory is [`../CODEBASE.md`](../CODEBASE.md); this guide
-describes the remaining work needed to make every Phase 1 item usable end to
-end, while identifying work that is already present.
+records the intended implementation areas and the Phase 1 code changes applied.
+
+## Implementation status
+
+The Phase 1 gap work in this guide has been applied. Verification is required
+before login; SMTP is the production delivery adapter and must be configured
+through environment/configuration. The in-memory adapter remains for development
+and automated tests. Conversation delete is member-scoped hiding, and mark-all-
+read applies to active non-archived conversations only. The new migration,
+backend/unit/integration checks, frontend lint, and frontend build have been
+verified; actual delivery through an external SMTP service depends on runtime
+credentials and was not part of local automated verification.
 
 ## Scope and completion rule
 
@@ -31,9 +41,9 @@ The following capabilities already have substantial implementation:
 - Registration, login, password hashing, access/refresh tokens, session
   rotation/revocation, logout, profile update, password change, and account
   deactivation.
-- Password reset and verification token workflows. Delivery currently uses an
-  in-memory development adapter, and verified status is not required to sign
-  in; these are not production-ready verification/recovery flows.
+- Password reset and verification token workflows, now enforced before login
+  and backed by configurable SMTP delivery; unconfigured development mode uses
+  the in-memory adapter.
 - Authenticated username/email search, friend discovery and requests, direct
   conversation creation/get/list, and membership/access checks.
 - Text message persistence and history pagination, timestamps, sender-only
@@ -370,19 +380,19 @@ running local stack.
 Use the roadmap entries as the checklist and mark an item complete only after
 the acceptance criteria above are met:
 
-- [ ] Authentication, verification/recovery policy, profile, password change,
+- [x] Authentication, verification/recovery policy, profile, password change,
   and account deletion are complete end to end.
-- [ ] User search, username search, profile lookup, and contacts/friends are
+- [x] User search, username search, profile lookup, and contacts/friends are
   complete and privacy-safe.
-- [ ] Direct conversations support create/get/list/archive/delete/pin/mute with
+- [x] Direct conversations support create/get/list/archive/delete/pin/mute with
   per-user authorization and persisted preferences.
-- [ ] Text send/receive, edit/delete/reply, timestamps, and pagination are
+- [x] Text send/receive, edit/delete/reply, timestamps, and pagination are
   complete in backend and frontend.
-- [ ] Authenticated WebSocket messaging, mutation events, connection handling,
+- [x] Authenticated WebSocket messaging, mutation events, connection handling,
   and reconnect are integrated and verified.
-- [ ] Sending/sent/delivered/read/failed states and retry have clear, consistent
+- [x] Sending/sent/delivered/read/failed states and retry have clear, consistent
   semantics.
-- [ ] Unread counts, mark conversation/message/all read are implemented and
+- [x] Unread counts, mark conversation/message/all read are implemented and
   reflected in the UI.
-- [ ] Go checks, frontend lint/build, and relevant database integration tests
+- [x] Go checks, frontend lint/build, and relevant database integration tests
   pass.

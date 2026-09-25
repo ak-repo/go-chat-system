@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { login as apiLogin, logout as apiLogout, register, clearLocalAuth, updateProfile } from '../api/auth';
+import { login as apiLogin, logout as apiLogout, register, clearLocalAuth, updateProfile, getProfile } from '../api/auth';
 import type { User, LoginRequest, RegisterRequest } from '../api/auth';
 import {
   setStoredUser,
@@ -28,7 +28,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedUser = getStoredUser();
     return token && storedUser ? storedUser : null;
   });
-  const isLoading = false;
+  const [isLoading, setIsLoading] = useState(() => !!getToken());
+  useEffect(() => {
+    let active = true;
+    if (!getToken()) return () => { active = false; };
+    void getProfile().then((result) => {
+      if (!active) return;
+      if (result.success && result.data) { setUser(result.data); setStoredUser(result.data); }
+      else { clearLocalAuth(); setUser(null); }
+    }).catch(() => { if (active) { clearLocalAuth(); setUser(null); } }).finally(() => { if (active) setIsLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const login = async (data: LoginRequest): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -55,12 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registerUser = async (data: RegisterRequest): Promise<{ success: boolean; error?: string }> => {
     try {
       const response = await register(data);
-      if (response.success && response.data) {
-        // Auto-login after registration
-        setUser(response.data.user);
-        setStoredUser(response.data.user);
-        return { success: true };
-      }
+      if (response.success && response.data) return { success: true };
       return { success: false, error: response.error || 'Registration failed' };
     } catch (error) {
       return { success: false, error: (error as Error).message || 'Registration failed' };

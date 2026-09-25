@@ -137,6 +137,7 @@ export default function FriendsPage() {
           <div className="flex items-center gap-3 sm:gap-5">
             <span className="hidden sm:block text-sm text-slate-300">{user?.username}</span>
             <button onClick={() => navigate('/profile')} className="soft-button px-3 py-2 text-sm">Profile</button>
+            <button onClick={() => navigate('/conversations')} className="soft-button px-3 py-2 text-sm">Chats</button>
             <button
               onClick={handleLogout}
               className="text-sm text-slate-400 hover:text-red-300"
@@ -211,9 +212,7 @@ export default function FriendsPage() {
                   >
                     <div>
                       <div className="flex items-center gap-3"><div className="avatar h-11 w-11">{friend.FriendName.charAt(0).toUpperCase()}</div><div><div className="font-semibold text-white">{friend.FriendName}</div>
-                      <div className="text-sm text-slate-400">
-                        {friend.FriendEmail}
-                      </div></div></div>
+                      <button onClick={() => navigate(`/users/${friend.FriendID}`)} className="text-sm text-blue-400 underline">View profile</button></div></div>
                     </div>
                     <button
                       onClick={() => handleChat(friend.FriendID)}
@@ -308,7 +307,7 @@ export default function FriendsPage() {
                     >
                       <div>
                         <div className="font-semibold text-white">{result.username}</div>
-                        <div className="text-sm text-slate-400">{result.email}</div>
+                        <button onClick={() => navigate(`/users/${result.id}`)} className="text-sm text-blue-400 underline">View profile</button>
                       </div>
                       <button
                         onClick={() => handleSendRequest(result.id)}

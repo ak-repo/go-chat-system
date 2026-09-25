@@ -47,3 +47,12 @@ redis:
   port: 6380
   password: ""
   db: 0
+
+# Email delivery. SMTP_PASSWORD should be provided via environment, not committed.
+email:
+  smtp_host: ""
+  smtp_port: 587
+  username: ""
+  password: ""
+  from: ""
+  app_url: http://localhost:5173

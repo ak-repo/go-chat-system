@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"crypto/sha256"
+	"strings"
 	"time"
 
 	"github.com/ak-repo/go-chat-system/internal/domain/model"
@@ -17,6 +18,9 @@ type UserRepository interface {
 	CreateUser(ctx context.Context, user *model.User) error
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
 	GetByID(ctx context.Context, id string) (*model.User, error)
+}
+type PublicUserRepository interface {
+	GetPublicByID(context.Context, string) (*model.PublicUser, error)
 }
 
 type SessionRepository interface {
@@ -67,8 +71,25 @@ func (r *UserRepositoryImpl) CreateUser(ctx context.Context, user *model.User) e
 	return nil
 }
 func (r *UserRepositoryImpl) UpdateProfile(ctx context.Context, id, username, email string) error {
-	_, err := r.db.Exec(ctx, `UPDATE users SET username=$2,email=$3,modified_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id, username, email)
-	return errs.Wrap("repository.User.UpdateProfile", err)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return errs.Wrap("repository.User.UpdateProfile", err)
+	}
+	defer tx.Rollback(ctx)
+	var oldEmail string
+	if err = tx.QueryRow(ctx, `SELECT email FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, id).Scan(&oldEmail); err != nil {
+		return errs.Wrap("repository.User.UpdateProfile", err)
+	}
+	emailChanged := !strings.EqualFold(oldEmail, email)
+	if _, err = tx.Exec(ctx, `UPDATE users SET username=$2,email=$3,verified_at=CASE WHEN $4 THEN NULL ELSE verified_at END,modified_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id, username, email, emailChanged); err != nil {
+		return errs.Wrap("repository.User.UpdateProfile", err)
+	}
+	if emailChanged {
+		if _, err = tx.Exec(ctx, `UPDATE sessions SET revoked_at=NOW() WHERE user_id=$1 AND revoked_at IS NULL`, id); err != nil {
+			return errs.Wrap("repository.User.UpdateProfile", err)
+		}
+	}
+	return errs.Wrap("repository.User.UpdateProfile", tx.Commit(ctx))
 }
 func (r *UserRepositoryImpl) ChangePassword(ctx context.Context, id, hash string) error {
 	_, err := r.db.Exec(ctx, `UPDATE users SET password_hash=$2,modified_at=NOW() WHERE id=$1 AND deleted_at IS NULL`, id, hash)
@@ -112,13 +133,13 @@ func (r *UserRepositoryImpl) GetByEmail(ctx context.Context, email string) (*mod
 
 	var user model.User
 	query := `
-		SELECT id, username, email, password_hash, role
+		SELECT id, username, email, password_hash, role, verified_at
 		FROM users
 		WHERE lower(email) = lower($1) AND deleted_at IS NULL
 	`
 
 	err := r.db.QueryRow(ctx, query, email).
-		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role)
+		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role, &user.VerifiedAt)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -133,13 +154,13 @@ func (r *UserRepositoryImpl) GetByID(ctx context.Context, id string) (*model.Use
 
 	var user model.User
 	query := `
-		SELECT id, username, email, password_hash, role
+		SELECT id, username, email, password_hash, role, verified_at
 		FROM users
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	err := r.db.QueryRow(ctx, query, id).
-		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role)
+		Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role, &user.VerifiedAt)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -148,6 +169,15 @@ func (r *UserRepositoryImpl) GetByID(ctx context.Context, id string) (*model.Use
 		return nil, errs.Wrap("repository.UserRepository.GetByID", err)
 	}
 	return &user, nil
+}
+
+func (r *UserRepositoryImpl) GetPublicByID(ctx context.Context, id string) (*model.PublicUser, error) {
+	var user model.PublicUser
+	err := r.db.QueryRow(ctx, `SELECT id,username FROM users WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&user.ID, &user.Username)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return &user, errs.Wrap("repository.User.GetPublicByID", err)
 }
 
 func (r *UserRepositoryImpl) SearchUser(ctx context.Context, filter string, limit int) (model.UsersDTO, error) {

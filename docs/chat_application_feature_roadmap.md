@@ -3,62 +3,62 @@
 ## Phase 1 — MVP / Core Chat
 
 ### Authentication & User Management
-- [ ] User registration
-- [ ] Login / logout
-- [ ] Password hashing
-- [ ] Access/refresh tokens
-- [ ] Email/phone verification
-- [ ] Forgot/reset password
-- [ ] User profile
-- [ ] Change password
-- [ ] Account deletion
+- [x] User registration
+- [x] Login / logout
+- [x] Password hashing
+- [x] Access/refresh tokens
+- [x] Email verification (SMTP-configurable; phone verification is not included)
+- [x] Forgot/reset password
+- [x] User profile
+- [x] Change password
+- [x] Account deletion (soft deactivation)
 
 ### User Discovery
-- [ ] Search users
-- [ ] Search by username
-- [ ] User profile lookup
-- [ ] Contacts/friends
+- [x] Search users
+- [x] Search by username
+- [x] User profile lookup
+- [x] Contacts/friends
 
 ### Conversations
-- [ ] Create 1-to-1 conversation
-- [ ] Get conversation
-- [ ] Conversation list
-- [ ] Archive conversation
-- [ ] Delete conversation
-- [ ] Pin conversation
-- [ ] Mute conversation
+- [x] Create 1-to-1 conversation
+- [x] Get conversation
+- [x] Conversation list
+- [x] Archive conversation (per-user)
+- [x] Delete conversation (per-user hide; preserves conversation history)
+- [x] Pin conversation (per-user)
+- [x] Mute conversation (per-user preference)
 
 ### Messaging
-- [ ] Send text message
-- [ ] Receive text message
-- [ ] Edit message
-- [ ] Delete message
-- [ ] Message timestamps
-- [ ] Reply to message
-- [ ] Message pagination
+- [x] Send text message
+- [x] Receive text message
+- [x] Edit message
+- [x] Delete message
+- [x] Message timestamps
+- [x] Reply to message
+- [x] Message pagination
 
 ### Real-Time Communication
-- [ ] WebSocket connection
-- [ ] WebSocket authentication
-- [ ] New message events
-- [ ] Message edited events
-- [ ] Message deleted events
-- [ ] Connection/disconnection handling
-- [ ] Automatic reconnection
+- [x] WebSocket connection
+- [x] WebSocket authentication
+- [x] New message events
+- [x] Message edited events
+- [x] Message deleted events
+- [x] Connection/disconnection handling
+- [x] Automatic reconnection
 
 ### Message Status
-- [ ] Sending state
-- [ ] Sent state
-- [ ] Delivered state
-- [ ] Read state
-- [ ] Failed state
-- [ ] Retry failed message
+- [x] Sending state
+- [x] Sent state
+- [x] Delivered state (recipient receipt)
+- [x] Read state
+- [x] Failed state (client-side send failure)
+- [x] Retry failed message
 
 ### Unread Messages
-- [ ] Unread count
-- [ ] Mark conversation as read
-- [ ] Mark message as read
-- [ ] Mark all as read
+- [x] Unread count
+- [x] Mark conversation as read
+- [x] Mark message as read
+- [x] Mark all as read (active, non-archived conversations)
 
 ---
 
@@ -344,16 +344,16 @@ Phase 8
 
 The first usable version should contain:
 
-- [ ] Authentication
-- [ ] User profiles
-- [ ] User search
-- [ ] 1-to-1 conversations
-- [ ] Text messages
-- [ ] WebSocket real-time communication
-- [ ] Sent/delivered/read status
-- [ ] Unread counts
-- [ ] Message pagination
-- [ ] Basic reconnection
+- [x] Authentication
+- [x] User profiles
+- [x] User search
+- [x] 1-to-1 conversations
+- [x] Text messages
+- [x] WebSocket real-time communication
+- [x] Sent/delivered/read status
+- [x] Unread counts
+- [x] Message pagination
+- [x] Basic reconnection
 
 ## Recommended Backend Stack
 

@@ -12,6 +12,7 @@ interface SocketContextType {
   sendMessage: (receiverId: string, content: string, conversationId?: string, clientMessageId?: string) => string | null;
   sendTyping: (receiverId: string, state: boolean, conversationId?: string) => boolean;
   sendReadReceipt: (receiverId: string, messageId: string, conversationId: string) => boolean;
+  sendEvent: (event: WSEventType, receiverId: string, data: unknown) => boolean;
   onMessage: (handler: (message: WSMessage<ChatMessage>) => void) => () => void;
   onTyping: (handler: (message: WSMessage<TypingData>) => void) => () => void;
   onRead: (handler: (message: WSMessage<ReadData>) => void) => () => void;
@@ -29,7 +30,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   useEffect(() => { if (!isConnected) return; void getUnread().then((response) => { if (response.success && response.data) setUnread(response.data.unread); }).catch(() => undefined); }, [isConnected]);
   const value: SocketContextType = {
     isConnected, sendMessage: (receiver, content, conversation, clientMessageId) => wsClient.sendMessage(receiver, content, conversation, clientMessageId),
-    sendTyping: (receiver, state, conversation) => wsClient.sendTyping(receiver, state, conversation), sendReadReceipt: (receiver, message, conversation) => wsClient.sendReadReceipt(receiver, message, conversation),
+    sendTyping: (receiver, state, conversation) => wsClient.sendTyping(receiver, state, conversation), sendReadReceipt: (receiver, message, conversation) => wsClient.sendReadReceipt(receiver, message, conversation), sendEvent: (event, receiver, data) => wsClient.sendEvent(event, receiver, data),
     onMessage: (handler) => wsClient.on('message', handler), onTyping: (handler) => {
       const off = [wsClient.on('typing', handler), wsClient.on('typing.started', (message) => handler({ ...message, data: { state: true } })), wsClient.on('typing.stopped', (message) => handler({ ...message, data: { state: false } }))];
       return () => off.forEach((remove) => remove());

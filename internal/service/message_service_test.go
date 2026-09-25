@@ -17,17 +17,19 @@ import (
 )
 
 type fakeMessageRepo struct {
-	messages     model.Messages
-	err          error
-	created      *model.Message
-	target       *model.Message
-	mutationErr  error
-	markedStatus string
-	createdErr   error
-	editedID     string
-	deletedID    string
-	markedRead   string
-	unread       map[string]int
+	messages        model.Messages
+	err             error
+	created         *model.Message
+	target          *model.Message
+	mutationErr     error
+	markedStatus    string
+	createdErr      error
+	editedID        string
+	deletedID       string
+	markedRead      string
+	unread          map[string]int
+	readAllUser     string
+	readAllReceipts []model.ReadReceipt
 }
 
 func (f *fakeMessageRepo) CreateMessage(_ context.Context, msg *model.Message) error {
@@ -73,6 +75,10 @@ func (f *fakeMessageRepo) UnreadSummary(context.Context, string) (map[string]int
 		f.unread = map[string]int{}
 	}
 	return f.unread, f.err
+}
+func (f *fakeMessageRepo) MarkAllActiveRead(_ context.Context, user string, _ time.Time) ([]model.ReadReceipt, error) {
+	f.readAllUser = user
+	return f.readAllReceipts, f.mutationErr
 }
 
 type fakeFriendRepo struct {
@@ -141,6 +147,15 @@ func TestGetMessagesUsesMiddlewareUserIDKey(t *testing.T) {
 	}
 	if got := data["offset"]; got != 0 {
 		t.Fatalf("expected offset 0, got %#v", got)
+	}
+}
+
+func TestReadAllUsesAuthenticatedIdentity(t *testing.T) {
+	repo := &fakeMessageRepo{}
+	svc := NewMessageServiceImpl(repo, nil, nil)
+	status, _, err := svc.ReadAll(httptest.NewRecorder(), authenticatedRequest(http.MethodPost, "", "user-1"))
+	if status != http.StatusOK || err != nil || repo.readAllUser != "user-1" {
+		t.Fatalf("expected active conversations marked read, got status=%d err=%v user=%q", status, err, repo.readAllUser)
 	}
 }
 

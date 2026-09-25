@@ -81,6 +81,7 @@ export default function LoginPage() {
             Register
           </Link>
         </p>
+        <p className="mt-3 text-center text-sm"><Link to="/verify" className="font-semibold text-blue-400 hover:text-blue-300">Need to verify your email?</Link></p>
       </div>
     </div>
   );

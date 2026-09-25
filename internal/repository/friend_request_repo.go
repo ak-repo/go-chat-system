@@ -161,8 +161,8 @@ func (r *FriendRequestRepositoryImpl) GetAllRequests(ctx context.Context, userID
 			   u.email,
 			   fr.created_at
 		FROM friend_requests fr
-		JOIN users u ON u.id = fr.sender_id
-		WHERE fr.receiver_id=$1
+		JOIN users u ON u.id = fr.sender_id AND u.deleted_at IS NULL
+		WHERE fr.receiver_id=$1 AND fr.status='pending'
 		ORDER BY fr.created_at DESC
 	`
 

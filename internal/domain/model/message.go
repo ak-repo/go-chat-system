@@ -19,15 +19,26 @@ type Message struct {
 	ClientMessageID  string       `json:"client_message_id,omitempty" db:"client_message_id"`
 	EditedAt         *time.Time   `json:"edited_at,omitempty" db:"edited_at"`
 	ReplyToMessageID string       `json:"reply_to_message_id,omitempty" db:"reply_to_message_id"`
+	Status           string       `json:"status,omitempty" db:"status"`
 }
 
 type Messages []*Message
 
+type ReadReceipt struct {
+	ConversationID string `json:"conversation_id"`
+	MessageID      string `json:"message_id"`
+	SenderID       string `json:"sender_id"`
+}
+
 type Conversation struct {
-	ID         string    `json:"id"`
-	Kind       string    `json:"kind"`
-	UserOneID  string    `json:"user_one_id"`
-	UserTwoID  string    `json:"user_two_id"`
-	CreatedAt  time.Time `json:"created_at"`
-	ModifiedAt time.Time `json:"modified_at"`
+	ID         string     `json:"id"`
+	Kind       string     `json:"kind"`
+	UserOneID  string     `json:"user_one_id"`
+	UserTwoID  string     `json:"user_two_id"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ModifiedAt time.Time  `json:"modified_at"`
+	Archived   bool       `json:"archived"`
+	Pinned     bool       `json:"pinned"`
+	Muted      bool       `json:"muted"`
+	MutedUntil *time.Time `json:"muted_until,omitempty"`
 }

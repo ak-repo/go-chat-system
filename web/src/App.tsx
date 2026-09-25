@@ -8,6 +8,8 @@ import ChatPage from './pages/ChatPage';
 import ProfilePage from './pages/ProfilePage';
 import RecoveryPage from './pages/RecoveryPage';
 import VerificationPage from './pages/VerificationPage';
+import ConversationsPage from './pages/ConversationsPage';
+import PublicProfilePage from './pages/PublicProfilePage';
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -99,6 +101,8 @@ function AppRoutes() {
         }
       />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
+      <Route path="/users/:userId" element={<ProtectedRoute><PublicProfilePage /></ProtectedRoute>} />
       <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<RootRedirect />} />
     </Routes>

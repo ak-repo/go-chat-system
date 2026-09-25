@@ -26,6 +26,7 @@ class WSClient {
   sendMessage(receiverId: string, content: string, conversationId?: string, clientMessageId: string = crypto.randomUUID()): string | null { return this.send('message', { content, client_message_id: clientMessageId, conversation_id: conversationId }, receiverId) ? clientMessageId : null; }
   sendTyping(receiverId: string, state: boolean, conversationId?: string): boolean { return this.send('typing', { state, conversation_id: conversationId }, receiverId); }
   sendReadReceipt(receiverId: string, messageId: string, conversationId: string): boolean { return this.send('message.read', { message_id: messageId, conversation_id: conversationId }, receiverId); }
+  sendEvent<T>(event: WSEventType, receiverId: string, data: T): boolean { return this.send(event, data, receiverId); }
   on<T = unknown>(event: WSEventType, handler: (message: WSMessage<T>) => void): () => void { const set = this.handlers.get(event) ?? new Set(); this.handlers.set(event, set); const callback = handler as (m: WSMessage) => void; set.add(callback); return () => set.delete(callback); }
   get connected(): boolean { return this.connectedState; }
 }

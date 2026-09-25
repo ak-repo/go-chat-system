@@ -55,6 +55,22 @@ func integrationDB(t *testing.T) *pgxpool.Pool {
 			t.Fatalf("apply canonical migration: %v", err)
 		}
 	}
+	var stateTable bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('public.conversation_user_state') IS NOT NULL").Scan(&stateTable); err != nil {
+		t.Fatalf("check phase 1 migration: %v", err)
+	}
+	if !stateTable {
+		_, file, _, _ := runtime.Caller(0)
+		migrationPath := filepath.Join(filepath.Dir(file), "..", "..", "migrations", "20260925090000_conversation_user_state.sql")
+		sql, err := os.ReadFile(migrationPath)
+		if err != nil {
+			t.Fatalf("read phase 1 migration: %v", err)
+		}
+		up := strings.SplitN(string(sql), "-- +goose Down", 2)[0]
+		if _, err := pool.Exec(ctx, up); err != nil {
+			t.Fatalf("apply phase 1 migration: %v", err)
+		}
+	}
 	if _, err := pool.Exec(ctx, `TRUNCATE TABLE conversation_read_state, message_deliveries, messages, conversation_members, conversations, account_tokens, sessions, friend_requests, blocks, friends, users CASCADE`); err != nil {
 		t.Fatalf("reset test database: %v", err)
 	}

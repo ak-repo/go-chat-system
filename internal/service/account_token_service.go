@@ -1,14 +1,18 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/ak-repo/go-chat-system/internal/repository"
 	"github.com/ak-repo/go-chat-system/internal/shared/errs"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
+	"log"
 	"net/http"
+	"net/smtp"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +24,33 @@ type Delivery interface {
 type DevelopmentDelivery struct {
 	mu                                  sync.Mutex
 	LastPurpose, LastAddress, LastToken string
+}
+
+type SMTPDelivery struct {
+	Host                             string
+	Port                             int
+	Username, Password, From, AppURL string
+}
+
+func (d *SMTPDelivery) Deliver(purpose, address, raw string) error {
+	if d.Host == "" || d.Port <= 0 || d.From == "" || d.AppURL == "" {
+		return fmt.Errorf("email delivery is not configured")
+	}
+	link := strings.TrimRight(d.AppURL, "/") + "/verify?token=" + raw
+	if purpose == "password_reset" {
+		link = strings.TrimRight(d.AppURL, "/") + "/recover?token=" + raw
+	}
+	subject := "Verify your chat account"
+	if purpose == "password_reset" {
+		subject = "Reset your chat password"
+	}
+	body := fmt.Sprintf("To continue, open this link:\r\n\r\n%s\r\n\r\nIf you did not request this, ignore this message.\r\n", link)
+	message := []byte("To: " + address + "\r\nFrom: " + d.From + "\r\nSubject: " + subject + "\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n" + body)
+	var auth smtp.Auth
+	if d.Username != "" {
+		auth = smtp.PlainAuth("", d.Username, d.Password, d.Host)
+	}
+	return smtp.SendMail(fmt.Sprintf("%s:%d", d.Host, d.Port), auth, d.From, []string{address}, message)
 }
 
 func (d *DevelopmentDelivery) Deliver(p, a, t string) error {
@@ -86,9 +117,14 @@ func (s *AccountTokenService) RequestReset(w http.ResponseWriter, r *http.Reques
 	q.Email = strings.ToLower(strings.TrimSpace(q.Email))
 	if len(q.Email) <= utils.MaxEmailLength && q.Email != "" && s.allowed(q.Email) {
 		if u, e := s.users.GetByEmail(r.Context(), q.Email); e == nil && u != nil {
-			raw, h, _ := token()
-			_, _ = s.tokens.CreateAccountToken(r.Context(), u.ID, "password_reset", h, time.Now().Add(time.Hour))
-			_ = s.delivery.Deliver("password_reset", u.Email, raw)
+			raw, h, tokenErr := token()
+			if tokenErr != nil {
+				log.Printf("password reset token generation failed: %v", tokenErr)
+			} else if _, createErr := s.tokens.CreateAccountToken(r.Context(), u.ID, "password_reset", h, time.Now().Add(time.Hour)); createErr != nil {
+				log.Printf("password reset token persistence failed: %v", createErr)
+			} else if deliveryErr := s.delivery.Deliver("password_reset", u.Email, raw); deliveryErr != nil {
+				log.Printf("password reset delivery failed: %v", deliveryErr)
+			}
 		}
 	}
 	return 200, utils.SuccessResponse(map[string]string{"message": "If the account exists, recovery instructions will be sent."}), nil
@@ -133,13 +169,32 @@ func (s *AccountTokenService) RequestVerification(w http.ResponseWriter, r *http
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&q)
 	q.Email = strings.ToLower(strings.TrimSpace(q.Email))
 	if len(q.Email) <= utils.MaxEmailLength && q.Email != "" && s.allowed("verify:"+q.Email) {
-		if u, e := s.users.GetByEmail(r.Context(), q.Email); e == nil && u != nil {
-			raw, h, _ := token()
-			_, _ = s.tokens.CreateAccountToken(r.Context(), u.ID, "verification", h, time.Now().Add(24*time.Hour))
-			_ = s.delivery.Deliver("verification", u.Email, raw)
+		if err := s.sendVerification(r.Context(), q.Email); err != nil {
+			log.Printf("verification delivery failed: %v", err)
 		}
 	}
 	return 200, utils.SuccessResponse(map[string]string{"message": "If the account exists, verification instructions will be sent."}), nil
+}
+
+func (s *AccountTokenService) SendVerification(ctx context.Context, email string) error {
+	return s.sendVerification(ctx, email)
+}
+func (s *AccountTokenService) sendVerification(ctx context.Context, email string) error {
+	u, err := s.users.GetByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
+	if err != nil || u == nil {
+		return err
+	}
+	if u.VerifiedAt != nil {
+		return nil
+	}
+	raw, h, err := token()
+	if err != nil {
+		return err
+	}
+	if _, err = s.tokens.CreateAccountToken(ctx, u.ID, "verification", h, time.Now().Add(24*time.Hour)); err != nil {
+		return err
+	}
+	return s.delivery.Deliver("verification", u.Email, raw)
 }
 func (s *AccountTokenService) Verify(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
 	var q struct {

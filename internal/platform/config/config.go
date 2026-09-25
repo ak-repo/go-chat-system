@@ -16,6 +16,15 @@ type AppConfig struct {
 	Server   Server         `mapstructure:"server"`
 	Redis    RedisConfig    `mapstructure:"redis"`
 	CORS     CORS           `mapstructure:"CORS"`
+	Email    EmailConfig    `mapstructure:"email"`
+}
+type EmailConfig struct {
+	SMTPHost string `mapstructure:"smtp_host"`
+	SMTPPort int    `mapstructure:"smtp_port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	From     string `mapstructure:"from"`
+	AppURL   string `mapstructure:"app_url"`
 }
 type Server struct {
 	Host string `mapstructure:"host"`
@@ -160,5 +169,25 @@ func overrideFromEnv() {
 		if port, err := strconv.Atoi(v); err == nil && port > 0 {
 			viper.Set("server.port", port)
 		}
+	}
+	if v := os.Getenv("SMTP_HOST"); v != "" {
+		viper.Set("email.smtp_host", v)
+	}
+	if v := os.Getenv("SMTP_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil && port > 0 {
+			viper.Set("email.smtp_port", port)
+		}
+	}
+	if v := os.Getenv("SMTP_USERNAME"); v != "" {
+		viper.Set("email.username", v)
+	}
+	if v := os.Getenv("SMTP_PASSWORD"); v != "" {
+		viper.Set("email.password", v)
+	}
+	if v := os.Getenv("EMAIL_FROM"); v != "" {
+		viper.Set("email.from", v)
+	}
+	if v := os.Getenv("APP_URL"); v != "" {
+		viper.Set("email.app_url", v)
 	}
 }

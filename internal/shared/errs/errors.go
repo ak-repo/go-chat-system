@@ -7,17 +7,18 @@ import (
 
 // Common (global) errors
 var (
-	ErrInternal     = errors.New("internal error")
-	ErrNotFound     = errors.New("resource not found")
-	ErrBadRequest   = errors.New("invalid input")
-	ErrForbidden    = errors.New("forbidden")
-	ErrUnauthorized = errors.New("unauthorized")
-	ErrConflict     = errors.New("conflict")
-	ErrValidation   = errors.New("validation failed")
-	ErrDatabase     = errors.New("database error")
-	ErrInactiveUser = errors.New("inactive user")
-	ErrTokenReused  = errors.New("token revoked or already used")
-	ErrNotMember    = errors.New("not a conversation member")
+	ErrInternal          = errors.New("internal error")
+	ErrNotFound          = errors.New("resource not found")
+	ErrBadRequest        = errors.New("invalid input")
+	ErrForbidden         = errors.New("forbidden")
+	ErrUnauthorized      = errors.New("unauthorized")
+	ErrConflict          = errors.New("conflict")
+	ErrValidation        = errors.New("validation failed")
+	ErrDatabase          = errors.New("database error")
+	ErrInactiveUser      = errors.New("inactive user")
+	ErrAccountUnverified = errors.New("account verification required")
+	ErrTokenReused       = errors.New("token revoked or already used")
+	ErrNotMember         = errors.New("not a conversation member")
 
 	// Validation-specific errors for better user feedback
 	ErrInvalidEmail = errors.New("invalid email format")

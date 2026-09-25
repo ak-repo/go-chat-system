@@ -42,6 +42,35 @@ func TestUserRepositoryCRUDAndSearch(t *testing.T) {
 	}
 }
 
+func TestUserRepositoryEmailChangeRequiresReverificationAndRevokesSessions(t *testing.T) {
+	db := integrationDB(t)
+	ids := integrationUsers(t, db, 1)
+	ctx := context.Background()
+	userID := ids[0]
+	if _, err := db.Exec(ctx, `UPDATE users SET verified_at=NOW() WHERE id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	session := testSession(userID)
+	r := NewUserRepositoryImpl(db)
+	if err := r.CreateSession(ctx, session); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UpdateProfile(ctx, userID, "updated", "new-"+userID+"@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	var verifiedAt *time.Time
+	var revokedAt *time.Time
+	if err := db.QueryRow(ctx, `SELECT verified_at FROM users WHERE id=$1`, userID).Scan(&verifiedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(ctx, `SELECT revoked_at FROM sessions WHERE id=$1`, session.ID).Scan(&revokedAt); err != nil {
+		t.Fatal(err)
+	}
+	if verifiedAt != nil || revokedAt == nil {
+		t.Fatalf("email change did not reset verification/revoke session: verified=%v revoked=%v", verifiedAt, revokedAt)
+	}
+}
+
 func TestUserRepositorySessionsAndAccountTokens(t *testing.T) {
 	db := integrationDB(t)
 	uid := integrationUsers(t, db, 1)[0]

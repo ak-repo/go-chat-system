@@ -1,6 +1,7 @@
 package injector
 
 import (
+	"github.com/ak-repo/go-chat-system/internal/platform/config"
 	"github.com/ak-repo/go-chat-system/internal/platform/database"
 	"github.com/ak-repo/go-chat-system/internal/repository"
 	"github.com/ak-repo/go-chat-system/internal/service"
@@ -51,7 +52,12 @@ func Init() *Container {
 	messageService := service.NewMessageServiceImpl(messageRepo, friendRepo, blockRepo)
 	conversationService := service.NewConversationService(conversationRepo, friendRepo, blockRepo)
 	messageService.SetConversationRepository(conversationRepo)
-	accountTokenService := service.NewAccountTokenService(userRepo, &service.DevelopmentDelivery{})
+	var delivery service.Delivery = &service.DevelopmentDelivery{}
+	if config.Config.Email.SMTPHost != "" {
+		delivery = &service.SMTPDelivery{Host: config.Config.Email.SMTPHost, Port: config.Config.Email.SMTPPort, Username: config.Config.Email.Username, Password: config.Config.Email.Password, From: config.Config.Email.From, AppURL: config.Config.Email.AppURL}
+	}
+	accountTokenService := service.NewAccountTokenService(userRepo, delivery)
+	userService.SetVerificationSender(accountTokenService)
 
 	return &Container{
 		FriendRepo:           friendRepo,

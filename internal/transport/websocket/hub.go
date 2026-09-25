@@ -204,7 +204,7 @@ func (h *Hub) dispatch(msg *WSMessage) {
 			h.sendResult(&deliveryResult{actor: actor, err: err})
 			return
 		}
-		data, _ := json.Marshal(map[string]any{"message_id": persisted.ID, "client_message_id": clientID, "content": persisted.Body, "timestamp": persisted.CreatedAt.Format(time.RFC3339Nano)})
+		data, _ := json.Marshal(map[string]any{"message_id": persisted.ID, "client_message_id": clientID, "content": persisted.Body, "conversation_id": persisted.ConversationID, "timestamp": persisted.CreatedAt.Format(time.RFC3339Nano)})
 		h.sendResult(&deliveryResult{actor: actor, message: &WSMessage{Event: EventMessage, SenderID: actor, ReceiverID: msg.ReceiverID, ReceiverType: ReceiverUser, Data: data}})
 	}()
 }
@@ -283,7 +283,7 @@ func (h *Hub) dispatchSync(msg *WSMessage) {
 		h.sendDomainError(actor, err)
 		return
 	}
-	data, _ := json.Marshal(map[string]any{"message_id": persisted.ID, "client_message_id": cid, "content": persisted.Body, "timestamp": persisted.CreatedAt.Format(time.RFC3339Nano)})
+	data, _ := json.Marshal(map[string]any{"message_id": persisted.ID, "client_message_id": cid, "content": persisted.Body, "conversation_id": persisted.ConversationID, "timestamp": persisted.CreatedAt.Format(time.RFC3339Nano)})
 	out := &WSMessage{Event: EventMessage, SenderID: actor, ReceiverID: msg.ReceiverID, ReceiverType: ReceiverUser, Data: data}
 	h.sendToUser(out)
 	ack, _ := json.Marshal(map[string]any{"server_id": persisted.ID, "client_message_id": cid, "status": "sent"})

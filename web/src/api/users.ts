@@ -21,3 +21,9 @@ export async function searchUsers(
   );
   return toApiResponse(response.data);
 }
+
+export interface PublicUser { id: string; username: string }
+export async function getPublicUser(id: string): Promise<ApiResponse<PublicUser>> {
+  const response = await apiClient.get<ApiResponse<PublicUser>>(`/users/${encodeURIComponent(id)}`);
+  return toApiResponse(response.data);
+}

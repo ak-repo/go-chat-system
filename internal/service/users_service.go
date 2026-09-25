@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,11 +16,13 @@ import (
 	"github.com/ak-repo/go-chat-system/internal/shared/jwt"
 	"github.com/ak-repo/go-chat-system/internal/shared/utils"
 	"github.com/ak-repo/go-chat-system/internal/transport/middleware"
+	"github.com/go-chi/chi"
 	"github.com/google/uuid"
 )
 
 type UserService interface {
 	SearchUser(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
+	GetPublicUser(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 	Register(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 	Login(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
 	RefreshToken(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error)
@@ -51,7 +54,16 @@ func configRefreshExpiry() time.Duration {
 }
 
 type UserServiceImpl struct {
-	userRepo repository.UserRepository
+	userRepo           repository.UserRepository
+	verificationSender interface {
+		SendVerification(context.Context, string) error
+	}
+}
+
+func (s *UserServiceImpl) SetVerificationSender(sender interface {
+	SendVerification(context.Context, string) error
+}) {
+	s.verificationSender = sender
 }
 
 func NewUserServiceImpl(userRepo repository.UserRepository) *UserServiceImpl {
@@ -80,6 +92,29 @@ func (s *UserServiceImpl) SearchUser(w http.ResponseWriter, r *http.Request) (in
 		"users": respObj,
 	}
 	return http.StatusOK, utils.SuccessResponse(responseData), nil
+}
+
+func (s *UserServiceImpl) GetPublicUser(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
+	_, err := actor(r)
+	if err != nil {
+		return 401, nil, err
+	}
+	id := chi.URLParam(r, "userID")
+	if uuid.Validate(id) != nil {
+		return 400, nil, errs.ErrValidation
+	}
+	rr, ok := s.userRepo.(repository.PublicUserRepository)
+	if !ok {
+		return 500, nil, errs.ErrInternal
+	}
+	u, err := rr.GetPublicByID(r.Context(), id)
+	if err != nil {
+		return 500, nil, err
+	}
+	if u == nil {
+		return 404, nil, errs.ErrNotFound
+	}
+	return 200, utils.SuccessResponse(u), nil
 }
 
 func (s *UserServiceImpl) Register(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
@@ -140,19 +175,10 @@ func (s *UserServiceImpl) Register(w http.ResponseWriter, r *http.Request) (int,
 	if err := s.userRepo.CreateUser(ctx, user); err != nil {
 		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Register", err)
 	}
-
-	refreshToken, refreshTTL, session, err := newRefresh(user.ID)
-	if err != nil {
-		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Register", err)
-	}
-	if sr, ok := s.userRepo.(repository.SessionRepository); ok {
-		if err := sr.CreateSession(r.Context(), session); err != nil {
-			return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Register", err)
+	if s.verificationSender != nil {
+		if err := s.verificationSender.SendVerification(ctx, user.Email); err != nil {
+			log.Printf("registration verification delivery failed: %v", err)
 		}
-	}
-	token, ttl, err := jwt.GenerateTokenForSession(user.ID, user.Email, user.Role, session.ID)
-	if err != nil {
-		return http.StatusInternalServerError, nil, errs.Wrap("service.UserService.Register", err)
 	}
 	responseData := map[string]any{
 		"user": &model.UserDTO{
@@ -161,9 +187,7 @@ func (s *UserServiceImpl) Register(w http.ResponseWriter, r *http.Request) (int,
 			Email:    user.Email,
 			Role:     user.Role,
 		},
-		"token":         token,
-		"exp":           ttl,
-		"refresh_token": refreshToken, "refresh_exp": refreshTTL,
+		"verification_required": true,
 	}
 	return http.StatusCreated, utils.SuccessResponse(responseData), nil
 
@@ -206,6 +230,9 @@ func (s *UserServiceImpl) Login(w http.ResponseWriter, r *http.Request) (int, *u
 
 	if !utils.ComparePassword(user.PasswordHash, req.Password) {
 		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
+	}
+	if user.VerifiedAt == nil {
+		return http.StatusForbidden, nil, errs.ErrAccountUnverified
 	}
 	user.PasswordHash = ""
 
@@ -272,6 +299,9 @@ func (s *UserServiceImpl) RefreshToken(w http.ResponseWriter, r *http.Request) (
 			return http.StatusUnauthorized, nil, errs.Wrap("service.UserService.RefreshToken", err)
 		}
 		return http.StatusUnauthorized, nil, errs.ErrUnauthorized
+	}
+	if user.VerifiedAt == nil {
+		return http.StatusForbidden, nil, errs.ErrAccountUnverified
 	}
 
 	newToken, refreshTTL, session, err := newRefresh(user.ID)
@@ -367,6 +397,11 @@ func (s *UserServiceImpl) UpdateMe(w http.ResponseWriter, r *http.Request) (int,
 	}
 	if e = a.UpdateProfile(r.Context(), id, q.Username, q.Email); e != nil {
 		return 500, nil, errs.Wrap("service.User.UpdateMe", e)
+	}
+	if s.verificationSender != nil {
+		if e = s.verificationSender.SendVerification(r.Context(), q.Email); e != nil {
+			log.Printf("profile verification delivery failed: %v", e)
+		}
 	}
 	return s.GetMe(w, r)
 }
