@@ -4,35 +4,43 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/ak-repo/go-chat-system/internal/repository"
-	"github.com/ak-repo/go-chat-system/internal/shared/errs"
-	"github.com/ak-repo/go-chat-system/internal/shared/utils"
+	"io"
 	"log"
-	"net/http"
+	"net"
 	"net/smtp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ak-repo/go-chat-system/internal/repository"
+	"github.com/ak-repo/go-chat-system/internal/shared/errs"
+	"github.com/ak-repo/go-chat-system/internal/shared/utils"
+	"net/http"
 )
 
 type Delivery interface {
-	Deliver(string, string, string) error
+	Deliver(context.Context, string, string, string) error
 }
 type DevelopmentDelivery struct {
 	mu                                  sync.Mutex
 	LastPurpose, LastAddress, LastToken string
+	AppURL                              string
 }
 
 type SMTPDelivery struct {
 	Host                             string
 	Port                             int
 	Username, Password, From, AppURL string
+	Timeout                          time.Duration
 }
 
-func (d *SMTPDelivery) Deliver(purpose, address, raw string) error {
+const defaultSMTPTimeout = 8 * time.Second
+
+func (d *SMTPDelivery) Deliver(parent context.Context, purpose, address, raw string) error {
 	if d.Host == "" || d.Port <= 0 || d.From == "" || d.AppURL == "" {
 		return fmt.Errorf("email delivery is not configured")
 	}
@@ -46,19 +54,82 @@ func (d *SMTPDelivery) Deliver(purpose, address, raw string) error {
 	}
 	body := fmt.Sprintf("To continue, open this link:\r\n\r\n%s\r\n\r\nIf you did not request this, ignore this message.\r\n", link)
 	message := []byte("To: " + address + "\r\nFrom: " + d.From + "\r\nSubject: " + subject + "\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n" + body)
+	timeout := d.Timeout
+	if timeout <= 0 {
+		timeout = defaultSMTPTimeout
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+	conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", net.JoinHostPort(d.Host, fmt.Sprint(d.Port)))
+	if err != nil {
+		return fmt.Errorf("connect to SMTP server: %w", err)
+	}
+	defer conn.Close()
+	stopCancellation := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopCancellation()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return fmt.Errorf("set SMTP deadline: %w", err)
+		}
+	}
+	client, err := smtp.NewClient(conn, d.Host)
+	if err != nil {
+		return fmt.Errorf("start SMTP session: %w", err)
+	}
+	defer client.Close()
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(&tls.Config{ServerName: d.Host, MinVersion: tls.VersionTLS12}); err != nil {
+			return fmt.Errorf("start SMTP TLS: %w", err)
+		}
+	} else if d.Username != "" {
+		return fmt.Errorf("SMTP server does not support STARTTLS")
+	}
 	var auth smtp.Auth
 	if d.Username != "" {
 		auth = smtp.PlainAuth("", d.Username, d.Password, d.Host)
 	}
-	return smtp.SendMail(fmt.Sprintf("%s:%d", d.Host, d.Port), auth, d.From, []string{address}, message)
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("authenticate to SMTP server: %w", err)
+		}
+	}
+	if err := client.Mail(d.From); err != nil {
+		return fmt.Errorf("set SMTP sender: %w", err)
+	}
+	if err := client.Rcpt(address); err != nil {
+		return fmt.Errorf("set SMTP recipient: %w", err)
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("start SMTP message: %w", err)
+	}
+	if _, err := io.WriteString(writer, string(message)); err != nil {
+		_ = writer.Close()
+		return fmt.Errorf("write SMTP message: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("send SMTP message: %w", err)
+	}
+	if err := client.Quit(); err != nil {
+		return fmt.Errorf("close SMTP session: %w", err)
+	}
+	return nil
 }
 
-func (d *DevelopmentDelivery) Deliver(p, a, t string) error {
+func (d *DevelopmentDelivery) Deliver(ctx context.Context, p, a, t string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.LastPurpose = p
 	d.LastAddress = a
 	d.LastToken = t
+	path := "/verify?token="
+	if p == "password_reset" {
+		path = "/recover?token="
+	}
+	log.Printf("DEVELOPMENT ONLY %s link (send this to %s): %s%s%s", p, a, strings.TrimRight(d.AppURL, "/"), path, t)
 	return nil
 }
 
@@ -122,7 +193,7 @@ func (s *AccountTokenService) RequestReset(w http.ResponseWriter, r *http.Reques
 				log.Printf("password reset token generation failed: %v", tokenErr)
 			} else if _, createErr := s.tokens.CreateAccountToken(r.Context(), u.ID, "password_reset", h, time.Now().Add(time.Hour)); createErr != nil {
 				log.Printf("password reset token persistence failed: %v", createErr)
-			} else if deliveryErr := s.delivery.Deliver("password_reset", u.Email, raw); deliveryErr != nil {
+			} else if deliveryErr := s.delivery.Deliver(r.Context(), "password_reset", u.Email, raw); deliveryErr != nil {
 				log.Printf("password reset delivery failed: %v", deliveryErr)
 			}
 		}
@@ -194,7 +265,7 @@ func (s *AccountTokenService) sendVerification(ctx context.Context, email string
 	if _, err = s.tokens.CreateAccountToken(ctx, u.ID, "verification", h, time.Now().Add(24*time.Hour)); err != nil {
 		return err
 	}
-	return s.delivery.Deliver("verification", u.Email, raw)
+	return s.delivery.Deliver(ctx, "verification", u.Email, raw)
 }
 func (s *AccountTokenService) Verify(w http.ResponseWriter, r *http.Request) (int, *utils.APIResponse, error) {
 	var q struct {

@@ -10,8 +10,9 @@ records the intended implementation areas and the Phase 1 code changes applied.
 
 The Phase 1 gap work in this guide has been applied. Verification is required
 before login; SMTP is the production delivery adapter and must be configured
-through environment/configuration. The in-memory adapter remains for development
-and automated tests. Conversation delete is member-scoped hiding, and mark-all-
+through environment/configuration. The development adapter prints usable links
+only when `app.environment: development` or `APP_ENV=development` is explicit.
+Conversation delete is member-scoped hiding, and mark-all-
 read applies to active non-archived conversations only. The new migration,
 backend/unit/integration checks, frontend lint, and frontend build have been
 verified; actual delivery through an external SMTP service depends on runtime

@@ -10,13 +10,17 @@ import (
 )
 
 type AppConfig struct {
-	Database DatabaseConfig `mapstructure:"database"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
-	Logging  LoggingConfig  `mapstructure:"logging"`
-	Server   Server         `mapstructure:"server"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	CORS     CORS           `mapstructure:"CORS"`
-	Email    EmailConfig    `mapstructure:"email"`
+	App      ApplicationConfig `mapstructure:"app"`
+	Database DatabaseConfig    `mapstructure:"database"`
+	JWT      JWTConfig         `mapstructure:"jwt"`
+	Logging  LoggingConfig     `mapstructure:"logging"`
+	Server   Server            `mapstructure:"server"`
+	Redis    RedisConfig       `mapstructure:"redis"`
+	CORS     CORS              `mapstructure:"CORS"`
+	Email    EmailConfig       `mapstructure:"email"`
+}
+type ApplicationConfig struct {
+	Environment string `mapstructure:"environment"`
 }
 type EmailConfig struct {
 	SMTPHost string `mapstructure:"smtp_host"`
@@ -169,6 +173,9 @@ func overrideFromEnv() {
 		if port, err := strconv.Atoi(v); err == nil && port > 0 {
 			viper.Set("server.port", port)
 		}
+	}
+	if v := os.Getenv("APP_ENV"); v != "" {
+		viper.Set("app.environment", v)
 	}
 	if v := os.Getenv("SMTP_HOST"); v != "" {
 		viper.Set("email.smtp_host", v)

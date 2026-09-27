@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,9 +37,55 @@ func (f *accountTokenRecorder) VerifyAccount(context.Context, []byte) (string, e
 	return "user-1", f.verifyErr
 }
 
-func (f *fakeDelivery) Deliver(purpose, address, raw string) error {
+func (f *fakeDelivery) Deliver(_ context.Context, purpose, address, raw string) error {
 	f.purpose, f.address, f.raw = purpose, address, raw
 	return f.err
+}
+
+func TestDevelopmentDeliveryLogsUsableLink(t *testing.T) {
+	var output bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	delivery := &DevelopmentDelivery{AppURL: "http://localhost:5173/"}
+	if err := delivery.Deliver(context.Background(), "verification", "alice@example.com", "secret-token"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "DEVELOPMENT ONLY") || !strings.Contains(output.String(), "http://localhost:5173/verify?token=secret-token") {
+		t.Fatalf("development verification link not logged: %q", output.String())
+	}
+	output.Reset()
+	if err := delivery.Deliver(context.Background(), "password_reset", "alice@example.com", "reset-token"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "http://localhost:5173/recover?token=reset-token") {
+		t.Fatalf("development reset link not logged: %q", output.String())
+	}
+}
+
+func TestSMTPDeliveryTimesOutWaitingForServerGreeting(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		conn, e := listener.Accept()
+		if e == nil {
+			defer conn.Close()
+			_, _ = conn.Read(make([]byte, 1))
+		}
+	}()
+	address, _ := listener.Addr().(*net.TCPAddr)
+	delivery := &SMTPDelivery{Host: "127.0.0.1", Port: address.Port, From: "chat@example.com", AppURL: "http://localhost", Timeout: 100 * time.Millisecond}
+	started := time.Now()
+	err = delivery.Deliver(context.Background(), "verification", "alice@example.com", "secret")
+	if err == nil {
+		t.Fatal("expected SMTP greeting timeout")
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("SMTP timeout was not bounded: %s", elapsed)
+	}
 }
 
 func TestRequestResetIsDeliberatelyGenericAndDeliversToken(t *testing.T) {

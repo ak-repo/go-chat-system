@@ -1,6 +1,8 @@
 package injector
 
 import (
+	"strings"
+
 	"github.com/ak-repo/go-chat-system/internal/platform/config"
 	"github.com/ak-repo/go-chat-system/internal/platform/database"
 	"github.com/ak-repo/go-chat-system/internal/repository"
@@ -52,10 +54,7 @@ func Init() *Container {
 	messageService := service.NewMessageServiceImpl(messageRepo, friendRepo, blockRepo)
 	conversationService := service.NewConversationService(conversationRepo, friendRepo, blockRepo)
 	messageService.SetConversationRepository(conversationRepo)
-	var delivery service.Delivery = &service.DevelopmentDelivery{}
-	if config.Config.Email.SMTPHost != "" {
-		delivery = &service.SMTPDelivery{Host: config.Config.Email.SMTPHost, Port: config.Config.Email.SMTPPort, Username: config.Config.Email.Username, Password: config.Config.Email.Password, From: config.Config.Email.From, AppURL: config.Config.Email.AppURL}
-	}
+	delivery := accountDelivery(config.Config.App.Environment, config.Config.Email)
 	accountTokenService := service.NewAccountTokenService(userRepo, delivery)
 	userService.SetVerificationSender(accountTokenService)
 
@@ -74,4 +73,19 @@ func Init() *Container {
 		ConversationRepo:     conversationRepo, ConversationService: conversationService,
 		AccountTokenService: accountTokenService,
 	}
+}
+
+func accountDelivery(environment string, email config.EmailConfig) service.Delivery {
+	if email.SMTPHost != "" {
+		return &service.SMTPDelivery{Host: email.SMTPHost, Port: email.SMTPPort, Username: email.Username, Password: email.Password, From: email.From, AppURL: email.AppURL}
+	}
+	if strings.EqualFold(strings.TrimSpace(environment), "development") {
+		appURL := email.AppURL
+		if appURL == "" {
+			appURL = "http://localhost:5173"
+		}
+		return &service.DevelopmentDelivery{AppURL: appURL}
+	}
+	// A missing SMTP setup must never silently select a token-exposing development adapter.
+	return &service.SMTPDelivery{}
 }

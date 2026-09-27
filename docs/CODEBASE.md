@@ -16,7 +16,9 @@ mutations, delivery/read/unread state, and direct real-time messaging over
 authenticated WebSockets. Verification is not an authentication gate, and
 unverified accounts cannot sign in. Email verification and password recovery
 support configurable SMTP delivery; without SMTP configuration, the server uses
-the development-only in-memory delivery adapter.
+the development-only adapter, which prints usable verification/reset links to
+the server log. This log behavior is enabled only when `app.environment` is
+explicitly `development` (or `APP_ENV=development`).
 
 The normal backend dependency direction is:
 
@@ -182,8 +184,9 @@ stored server-side and checked on protected routes and by the WebSocket hub.
 Email verification and password recovery use `SMTPDelivery` when SMTP is
 configured. Runtime keys are `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, `EMAIL_FROM`, and `APP_URL`; otherwise the development adapter
-records the token in memory and cannot deliver it to a user. Browser tokens and
-the stored user remain in localStorage.
+prints links only when the configured application environment is explicitly
+development; non-development environments never select token-logging delivery.
+Browser tokens and the stored user remain in localStorage.
 
 ## 8. REST APIs
 
@@ -318,8 +321,8 @@ hub is process-local; Redis is not used for WebSocket fan-out or presence.
 - Presence is emitted by the hub but not represented in frontend state.
 - Refresh lifecycle, localStorage token storage, and hard-coded frontend URL
   are usable locally but incomplete for production.
-- SMTP must be configured for usable email delivery; without it the runtime uses
-  the in-memory development adapter.
+- SMTP must be configured for email delivery outside development; a missing SMTP
+  configuration in other environments fails delivery without exposing tokens.
 
 ### Scaffolded
 
@@ -342,7 +345,7 @@ hub is process-local; Redis is not used for WebSocket fan-out or presence.
 `internal/platform/config/config.go` reads `config.yaml` from the working
 directory or `./config/`, then applies non-empty overrides for `DB_HOST`,
 `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `REDIS_HOST`, `REDIS_PORT`,
-`JWT_SECRET`, `PORT`, and the SMTP/email variables listed above.
+`JWT_SECRET`, `PORT`, `APP_ENV`, and the SMTP/email variables listed above.
 
 Configuration sections are `database`, `jwt`, `server`, `CORS`, `logging`,
 `redis`, and `email`. `config/config.example.yaml` documents local defaults. Pool duration
@@ -387,16 +390,12 @@ production Dockerfile for the application or frontend.
 - Message history is offset-paginated and SQL-ordered newest-first; the UI
   re-sorts it chronologically.
 - No startup migration runner or offline delivery/event replay.
-- The chat UI does not yet expose edit/delete/reply controls or render every
-  mutation/status event, although the backend REST and WebSocket paths exist.
 - Error responses lack machine-readable codes.
-- Soft-delete semantics are incomplete.
 - Browser tokens are stored in localStorage. WebSocket credentials are passed
   in the `token` query string, which can expose access tokens to intermediary
   logs; use a safer upgrade mechanism before production deployment.
-- Recovery and verification delivery is development-only (`DevelopmentDelivery`)
-  rather than email/phone delivery, and verification is not enforced.
-- Automated frontend tests and PostgreSQL repository/integration tests are not
-  implemented.
+- Frontend automated tests are not implemented. PostgreSQL repository integration
+  tests are available with the `integration` build tag and require
+  `TEST_DATABASE_URL`.
 
 For deployment-specific commands and checklist, see `docs/DEPLOYMENT.md`.
