@@ -26,15 +26,20 @@ type WSMessage struct {
 }
 
 const (
-	EventMessage   = "message"
-	EventEdited    = "message.edited"
-	EventDeleted   = "message.deleted"
-	EventReplied   = "message.replied"
-	EventDelivered = "message.delivered"
-	EventRead      = "message.read"
-	EventTyping    = "typing"
-	EventAck       = "ack"
-	EventError     = "error"
+	EventMessage          = "message"
+	EventEdited           = "message.edited"
+	EventDeleted          = "message.deleted"
+	EventReplied          = "message.replied"
+	EventDelivered        = "message.delivered"
+	EventRead             = "message.read"
+	EventReactionAdded    = "message.reaction.added"
+	EventReactionRemoved  = "message.reaction.removed"
+	EventTyping           = "typing"
+	EventAck              = "ack"
+	EventError            = "error"
+	EventOnline           = "user_online"
+	EventOffline          = "user_offline"
+	EventPresenceSnapshot = "presence.snapshot"
 )
 
 // Validate checks the envelope and the event's discriminated payload. Unknown
@@ -60,12 +65,21 @@ func (m *WSMessage) Validate() error {
 	}
 	switch m.Event {
 	case EventMessage:
-		if m.ReceiverType != ReceiverUser || m.ReceiverID == "" {
+		if m.ReceiverType != ReceiverUser && m.ReceiverType != ReceiverGroup {
+			return errors.New("message requires a receiver type")
+		}
+		if m.ReceiverType == ReceiverUser && m.ReceiverID == "" {
 			return errors.New("message requires a user receiver")
+		}
+		if m.ReceiverType == ReceiverGroup {
+			return required("content", "conversation_id")
 		}
 		return required("content")
 	case EventEdited, EventReplied:
-		if m.ReceiverType != ReceiverUser || m.ReceiverID == "" {
+		if m.ReceiverType != ReceiverUser && m.ReceiverType != ReceiverGroup {
+			return errors.New("mutation requires a receiver type")
+		}
+		if m.ReceiverType == ReceiverUser && m.ReceiverID == "" {
 			return errors.New("mutation requires a user receiver")
 		}
 		if err := required("message_id", "content", "conversation_id"); err != nil {
@@ -77,17 +91,31 @@ func (m *WSMessage) Validate() error {
 		}
 		return nil
 	case EventDeleted, EventDelivered:
-		if m.ReceiverType != ReceiverUser || m.ReceiverID == "" {
+		if m.ReceiverType != ReceiverUser && m.ReceiverType != ReceiverGroup {
+			return errors.New("mutation requires a receiver type")
+		}
+		if m.ReceiverType == ReceiverUser && m.ReceiverID == "" {
 			return errors.New("mutation requires a user receiver")
 		}
 		return required("message_id", "conversation_id")
+	case EventReactionAdded, EventReactionRemoved:
+		if m.ReceiverType != ReceiverUser && m.ReceiverType != ReceiverGroup {
+			return errors.New("reaction requires a receiver type")
+		}
+		return required("message_id", "conversation_id", "reaction")
 	case EventRead:
-		if m.ReceiverType != ReceiverUser || m.ReceiverID == "" {
+		if m.ReceiverType != ReceiverUser && m.ReceiverType != ReceiverGroup {
+			return errors.New("read requires a receiver type")
+		}
+		if m.ReceiverType == ReceiverUser && m.ReceiverID == "" {
 			return errors.New("read requires a user receiver")
 		}
 		return required("message_id", "conversation_id")
 	case EventTyping:
-		if m.ReceiverType != ReceiverUser || m.ReceiverID == "" {
+		if m.ReceiverType != ReceiverUser && m.ReceiverType != ReceiverGroup {
+			return errors.New("typing requires a receiver type")
+		}
+		if m.ReceiverType == ReceiverUser && m.ReceiverID == "" {
 			return errors.New("typing requires a user receiver")
 		}
 		return required("state", "conversation_id")

@@ -1,13 +1,13 @@
 import { BASE_URL, getToken, refreshAccessToken } from './client';
 
-export type WSEventType = 'message' | 'message.edited' | 'message.deleted' | 'message.replied' | 'message.delivered' | 'message.read' | 'typing' | 'typing.started' | 'typing.stopped' | 'read' | 'user_online' | 'user_offline' | 'ack' | 'error';
+export type WSEventType = 'message' | 'message.edited' | 'message.deleted' | 'message.replied' | 'message.reaction.added' | 'message.reaction.removed' | 'message.delivered' | 'message.read' | 'typing' | 'typing.started' | 'typing.stopped' | 'read' | 'user_online' | 'user_offline' | 'presence.snapshot' | 'notification.created' | 'notification.read' | 'ack' | 'error';
 export interface WSMessage<T = unknown> { event: WSEventType; sender_id?: string; receiver_id?: string; receiver_type?: 'user' | 'group'; data: T }
-export interface ChatMessage { message_id: string; client_message_id?: string; content: string; timestamp: string; conversation_id?: string }
-export interface TypingData { state: boolean; conversation_id?: string }
+export interface ChatMessage { message_id: string; client_message_id?: string; content: string; timestamp: string; conversation_id?: string; mentions?: import('./messages').MessageMention[] }
+export interface TypingData { state: boolean; conversation_id?: string; timestamp?: string }
 export interface ReadData { message_id: string; read_at?: string; conversation_id?: string }
-export interface AckData { server_id?: string; message_id?: string; client_message_id?: string; status: 'sent' | 'delivered' | 'read' | 'failed'; event?: string }
-export interface ErrorData { code: string; message: string }
-const events = new Set<WSEventType>(['message', 'message.edited', 'message.deleted', 'message.replied', 'message.delivered', 'message.read', 'typing', 'typing.started', 'typing.stopped', 'read', 'user_online', 'user_offline', 'ack', 'error']);
+export interface AckData { server_id?: string; message_id?: string; client_message_id?: string; conversation_id?: string; status: 'sent' | 'delivered' | 'read' | 'failed'; event?: string }
+export interface ErrorData { code: string; message: string; client_message_id?: string; conversation_id?: string }
+const events = new Set<WSEventType>(['message', 'message.edited', 'message.deleted', 'message.replied', 'message.reaction.added', 'message.reaction.removed', 'message.delivered', 'message.read', 'typing', 'typing.started', 'typing.stopped', 'read', 'user_online', 'user_offline', 'presence.snapshot', 'notification.created', 'notification.read', 'ack', 'error']);
 function wsUrl(): string { const u = new URL(`${BASE_URL}/ws`); u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'; return `${u}?token=${encodeURIComponent(getToken() ?? '')}`; }
 
 class WSClient {
@@ -22,11 +22,12 @@ class WSClient {
   private async reconnect(lifecycle = this.lifecycle): Promise<void> { if (!this.enabled || lifecycle !== this.lifecycle) return; try { const token = await refreshAccessToken(); if (this.enabled && lifecycle === this.lifecycle) await this.open(token, lifecycle); } catch { const token = getToken(); if (token && this.enabled && lifecycle === this.lifecycle) await this.open(token, lifecycle); } }
   disconnect(): void { this.enabled = false; this.lifecycle += 1; if (this.timer) clearTimeout(this.timer); this.timer = null; this.ws?.close(); this.ws = null; this.connectedState = false; this.stateHandler?.(false); }
   setOnStateChange(handler: (connected: boolean) => void): void { this.stateHandler = handler; }
-  send<T>(event: WSEventType, data: T, receiverId: string): boolean { if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false; this.ws.send(JSON.stringify({ event, receiver_id: receiverId, receiver_type: 'user', data })); return true; }
+  send<T>(event: WSEventType, data: T, receiverId: string, receiverType: 'user' | 'group' = 'user'): boolean { if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false; this.ws.send(JSON.stringify({ event, receiver_id: receiverId, receiver_type: receiverType, data })); return true; }
   sendMessage(receiverId: string, content: string, conversationId?: string, clientMessageId: string = crypto.randomUUID()): string | null { return this.send('message', { content, client_message_id: clientMessageId, conversation_id: conversationId }, receiverId) ? clientMessageId : null; }
   sendTyping(receiverId: string, state: boolean, conversationId?: string): boolean { return this.send('typing', { state, conversation_id: conversationId }, receiverId); }
   sendReadReceipt(receiverId: string, messageId: string, conversationId: string): boolean { return this.send('message.read', { message_id: messageId, conversation_id: conversationId }, receiverId); }
   sendEvent<T>(event: WSEventType, receiverId: string, data: T): boolean { return this.send(event, data, receiverId); }
+  sendConversationEvent<T>(event: WSEventType, conversationId: string, receiverType: 'user' | 'group', receiverId: string, data: T): boolean { return this.send(event, { ...data, conversation_id: conversationId }, receiverId, receiverType); }
   on<T = unknown>(event: WSEventType, handler: (message: WSMessage<T>) => void): () => void { const set = this.handlers.get(event) ?? new Set(); this.handlers.set(event, set); const callback = handler as (m: WSMessage) => void; set.add(callback); return () => set.delete(callback); }
   get connected(): boolean { return this.connectedState; }
 }

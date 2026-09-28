@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export default function RegisterPage() {
   const { registerUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,7 +21,7 @@ export default function RegisterPage() {
     setLoading(false);
 
     if (result.success) {
-      navigate(`/verify?email=${encodeURIComponent(email.trim().toLowerCase())}`, { replace: true });
+      navigate(`/verify?email=${encodeURIComponent(email.trim().toLowerCase())}`, { replace: true, state: location.state });
     } else {
       setError(result.error || 'Registration failed');
     }
@@ -89,7 +90,7 @@ export default function RegisterPage() {
 
         <p className="mt-6 text-center text-sm text-slate-400">
           Already have an account?{' '}
-          <Link to="/login" className="font-semibold text-blue-400 hover:text-blue-300">
+          <Link to="/login" state={location.state} className="font-semibold text-blue-400 hover:text-blue-300">
             Login
           </Link>
         </p>

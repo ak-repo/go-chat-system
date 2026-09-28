@@ -223,8 +223,10 @@ upgrade migration.
 ### Notable behavior
 
 - Active application queries filter soft-deactivated users through `deleted_at`.
-- Group messaging has an `is_group` field in `messages`, but the canonical
-  conversation schema currently permits only direct conversations.
+- Direct and group conversations are supported by additive migrations. Group
+  access is based on persisted membership and roles; group messages use
+  conversation IDs and per-member delivery state. For the maintained current
+  feature inventory, see [`CODEBASE.md`](CODEBASE.md).
 
 ## 7. Authentication
 

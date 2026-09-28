@@ -65,50 +65,50 @@
 ## Phase 2 — Full Chat Experience
 
 ### Group Chat
-- [ ] Create group
-- [ ] Group name
-- [ ] Group avatar
-- [ ] Add members
-- [ ] Remove members
-- [ ] Leave group
-- [ ] Group administrators
-- [ ] Promote/demote members
-- [ ] Group permissions
-- [ ] Change group information
-- [ ] Group invite link
+- [x] Create group
+- [x] Group name
+- [ ] Group avatar (deferred: generated initials are used; no upload)
+- [x] Add members
+- [x] Remove members
+- [x] Leave group
+- [x] Group administrators
+- [x] Promote/demote members
+- [x] Group permissions
+- [x] Change group information
+- [x] Group invite link
 
 ### Presence
-- [ ] Online status
-- [ ] Offline status
-- [ ] Last seen
-- [ ] Presence synchronization
+- [x] Online status (single-server, authorized audience)
+- [x] Offline status (single-server, authorized audience)
+- [ ] Last seen (deferred pending privacy/retention policy)
+- [x] Presence synchronization (connection snapshot/reconnect; distributed sync deferred)
 
 ### Typing Indicators
-- [ ] Typing started
-- [ ] Typing stopped
-- [ ] Multiple users typing
+- [x] Typing started
+- [x] Typing stopped
+- [x] Multiple users typing
 
 ### Message Interactions
-- [ ] Reply to message
-- [ ] Forward message
-- [ ] Copy message
-- [ ] Message reactions
-- [ ] Emoji reactions
-- [ ] Message context actions
+- [x] Reply to message
+- [x] Forward message
+- [x] Copy message
+- [x] Message reactions
+- [x] Emoji reactions
+- [x] Message context actions
 
 ### Mentions
-- [ ] Mention users
-- [ ] Mention notifications
-- [ ] @everyone
-- [ ] Highlight mentions
+- [x] Mention users
+- [x] Mention notifications
+- [x] @everyone
+- [x] Highlight mentions
 
 ### Notifications
-- [ ] New message notifications
-- [ ] Mention notifications
-- [ ] Reply notifications
-- [ ] Push notifications
-- [ ] Notification preferences
-- [ ] Mute notifications
+- [x] New message notifications (in-app)
+- [x] Mention notifications (in-app)
+- [x] Reply notifications (in-app)
+- [ ] Push notifications (deferred: no device/provider worker infrastructure)
+- [x] Notification preferences
+- [x] Mute notifications
 
 ---
 

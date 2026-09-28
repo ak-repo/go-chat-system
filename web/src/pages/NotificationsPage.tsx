@@ -1,0 +1,18 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { getNotificationPreferences, listNotifications, markAllNotificationsRead, markNotificationRead, updateNotificationPreferences, type Notification, type NotificationPreferences } from '../api/notifications';
+import { useSocket } from '../context/SocketContext';
+
+export default function NotificationsPage() {
+  const { onEvent } = useSocket();
+  const [items, setItems] = useState<Notification[]>([]);
+  const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
+  const [error, setError] = useState('');
+  const load = async () => { try { const [notifications, prefs] = await Promise.all([listNotifications(), getNotificationPreferences()]); setItems(notifications.data?.notifications ?? []); setPreferences(prefs.data ?? null); } catch { setError('Could not load notifications'); } };
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => onEvent('notification.created', (event) => { const notification = event.data as Notification; setItems((current) => current.some((item) => item.id === notification.id) ? current : [notification, ...current]); }), [onEvent]);
+  const read = async (notification: Notification) => { if (!notification.read_at) { const result = await markNotificationRead(notification.id); if (result.data) setItems((current) => current.map((item) => item.id === notification.id ? result.data! : item)); } };
+  const readAll = async () => { const result = await markAllNotificationsRead(); if (result.success) setItems((current) => current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() }))); };
+  const toggle = async (key: keyof NotificationPreferences) => { if (!preferences) return; const result = await updateNotificationPreferences({ [key]: !preferences[key] }); if (result.data) setPreferences(result.data); };
+  return <main className="app-shell min-h-screen px-4 py-8"><div className="mx-auto max-w-3xl"><div className="mb-6 flex items-center justify-between"><div><Link to="/conversations" className="text-sm text-blue-400">Back to conversations</Link><h1 className="mt-2 text-2xl font-bold">Notifications</h1></div><button className="soft-button px-3 py-2 text-sm" onClick={() => void readAll()}>Mark all read</button></div>{error && <p className="text-red-300">{error}</p>}{preferences && <section className="mb-6 rounded-2xl border border-[#25364d] bg-[#111d2d] p-4"><h2 className="font-semibold">Preferences</h2><div className="mt-3 flex flex-wrap gap-4">{(['message_enabled', 'reply_enabled', 'mention_enabled'] as const).map((key) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={preferences[key]} onChange={() => void toggle(key)} />{key.replace('_enabled', '').replace(/^./, (value) => value.toUpperCase())}</label>)}</div></section>}<div className="space-y-3">{items.map((item) => <Link key={item.id} to={`/conversations/${item.conversation_id}`} onClick={() => void read(item)} className={`block rounded-2xl border p-4 ${item.read_at ? 'border-[#25364d] bg-[#111d2d]' : 'border-blue-500/60 bg-blue-500/10'}`}><div className="flex justify-between gap-3"><p className="font-medium">New {item.type}</p><time className="text-xs text-slate-400">{new Date(item.created_at).toLocaleString()}</time></div><p className="mt-1 truncate text-sm text-slate-300">{item.payload.content ?? 'Open conversation'}</p></Link>)}{items.length === 0 && <p className="py-12 text-center text-slate-400">No notifications yet.</p>}</div></div></main>;
+}

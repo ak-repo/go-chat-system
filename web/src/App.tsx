@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import LoginPage from './pages/LoginPage';
@@ -10,10 +10,16 @@ import RecoveryPage from './pages/RecoveryPage';
 import VerificationPage from './pages/VerificationPage';
 import ConversationsPage from './pages/ConversationsPage';
 import PublicProfilePage from './pages/PublicProfilePage';
+import CreateGroupPage from './pages/CreateGroupPage';
+import GroupSettingsPage from './pages/GroupSettingsPage';
+import DirectChatResolver from './pages/DirectChatResolver';
+import NotificationsPage from './pages/NotificationsPage';
+import InviteAcceptancePage from './pages/InviteAcceptancePage';
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -24,7 +30,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} />;
   }
 
   return <>{children}</>;
@@ -33,6 +39,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 // Public route wrapper (redirect if already logged in)
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -43,7 +50,8 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/friends" replace />;
+    const from = (location.state as { from?: unknown } | null)?.from;
+    return <Navigate to={typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/friends'} replace />;
   }
 
   return <>{children}</>;
@@ -96,13 +104,18 @@ function AppRoutes() {
         path="/chat/:userId"
         element={
           <ProtectedRoute>
-            <ChatPage />
+            <DirectChatResolver />
           </ProtectedRoute>
         }
       />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
       <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
+      <Route path="/conversations/new-group" element={<ProtectedRoute><CreateGroupPage /></ProtectedRoute>} />
+      <Route path="/conversations/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+      <Route path="/conversations/:conversationId/settings" element={<ProtectedRoute><GroupSettingsPage /></ProtectedRoute>} />
       <Route path="/users/:userId" element={<ProtectedRoute><PublicProfilePage /></ProtectedRoute>} />
+      <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+      <Route path="/invites/:token" element={<ProtectedRoute><InviteAcceptancePage /></ProtectedRoute>} />
       <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<RootRedirect />} />
     </Routes>

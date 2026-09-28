@@ -114,16 +114,19 @@ The REST wrapper returns `{"status":"ok","data":...}` for data responses,
 - `AuthContext` owns the current user and login/register/logout state.
 - `SocketContext` connects the socket while authenticated and exposes socket
   actions/listeners to pages.
-- `App.tsx` routes `/login`, `/register`, `/recover`, `/verify`, `/friends`,
-  `/profile`, `/conversations`, `/users/:userId`, and `/chat/:userId`, and applies
-  public/protected route guards.
+- `App.tsx` routes authentication, discovery/profile, conversation, group,
+  notification, and invite-acceptance screens and applies public/protected route
+  guards. `/chat/:userId` resolves a direct conversation before routing to
+  `/conversations/:conversationId`.
 - `FriendsPage` implements friend listing, incoming requests, and user search.
-- `ChatPage` creates/opens a direct conversation, loads paginated history,
-  displays direct messages and persisted statuses, sends messages with client
-  IDs, retries failed sends, supports edit/delete/reply, marks incoming messages
-  read, displays typing state, and exposes per-user conversation controls.
+- `ChatPage` handles direct and group conversations, paginated history,
+  idempotent optimistic sends/retries, edit/delete/reply/forward/copy/reactions,
+  structured mentions, persisted statuses, read receipts, presence, and
+  multi-user typing.
 - `ConversationsPage` lists active/archived conversations, preferences, unread
   counts, and the active-conversation mark-all-as-read action.
+- `GroupSettingsPage` manages group metadata, members, roles, and owner/admin
+  invite links. `/invites/:token` accepts an invite for an authenticated user.
 
 The frontend REST base URL is currently hard-coded to
 `http://localhost:8002/api/v1` in `web/src/api/client.ts`.
@@ -132,7 +135,8 @@ The frontend REST base URL is currently hard-coded to
 
 The fresh-install schema starts with
 `migrations/20260829120500_canonical_schema.sql`; additive changes are defined by
-later migrations, including `migrations/20260925090000_conversation_user_state.sql`.
+later migrations for conversation preferences and Phase 2 groups, interactions,
+mentions/notifications, invites, and integrity constraints.
 Never edit an already-deployed migration. The canonical migration's `Down` is
 intentionally destructive; the conversation-state migration's `Down` removes
 only the new preference data/table.
@@ -143,23 +147,27 @@ only the new preference data/table.
 | `friends` | Directed rows; mutual friendship is two rows. Composite primary key and no-self constraint. |
 | `blocks` | Directed blocker/blocked rows with composite primary key and no-self constraint. |
 | `friend_requests` | Sender, receiver, UUID, status (`pending`, `accepted`, `rejected`, `blocked`), timestamps. |
-| `messages` | Sender, receiver, conversation, body, `is_group`, timestamps, deletion/edit state, client idempotency ID, and optional reply. |
+| `messages` | Sender, conversation, optional direct receiver, body, direct/group kind, timestamps, deletion/edit state, client idempotency ID, reply, and forward provenance. |
 | `sessions` | Hashed refresh-token sessions with expiry, rotation, and revocation state. |
 | `account_tokens` | One-time hashed verification and password-reset tokens. |
-| `conversations` | Currently direct conversations with a canonical user pair. |
-| `conversation_members` | Active/left membership for conversations. |
+| `conversations` | Direct conversations with a canonical user pair and group conversations with metadata/creator. |
+| `conversation_members` | Active/left membership, current join window, group role, and adding actor. |
 | `conversation_user_state` | Per-member archive, hide, pin, and mute preferences. |
 | `message_deliveries` | Per-recipient monotonic sent/delivered/read/failed state. |
 | `conversation_read_state` | Per-user last-read message and timestamp. |
+| `message_mentions` | Stable user/everyone entities and Unicode rendering ranges for messages. |
+| `notifications` | Durable deduplicated message/reply/mention notifications with read state. |
+| `notification_preferences` | Per-user message/reply/mention notification switches. |
+| `group_invites` | Expiring/revocable group invites with SHA-256 token hashes and optional use limits; raw tokens are never persisted. |
 
 Foreign keys constrain relationships, conversations, and messages. Indexes cover
 user discovery, sessions, account-token lookup, friend/block lookup, pending
 requests, conversations/members, messages, idempotency, replies, delivery, and
 read state. The seed file contains demo data.
 
-User and message deactivation/deletion use `deleted_at` filtering in the active
-flows. `messages.is_group` and group receiver types remain scaffolding; the
-conversation schema currently permits only direct conversations.
+User and message deactivation/deletion use `deleted_at` filtering in active
+flows. Group membership is PostgreSQL-authoritative; group messages have no
+single receiver and create per-recipient delivery rows for active members.
 
 ## 7. Authentication
 
@@ -229,20 +237,38 @@ access JWT. Successful nil responses are encoded as `{"message":"ok"}`.
 | `GET /conversations/{conversationID}` | none | Gets a conversation only for an active member. |
 | `PATCH /conversations/{conversationID}/preferences` | `archived`, `pinned`, `mute_minutes` (at least one) | Updates the acting member's preferences; mute `0` clears mute. |
 | `DELETE /conversations/{conversationID}` | none | Hides the conversation only from the acting member; history is retained. Reopening via create/get restores that member's view. |
-| `GET /conversations/{conversationID}/messages` | `limit` (50/100), `offset` (0+) | Returns authorized direct conversation history. |
-| `POST /conversations/{conversationID}/messages` | `content`, optional client/reply IDs | Persists an authorized message with duplicate-safe client ID handling. |
+| `POST /groups` | `name`, optional `description`, `member_ids` | Creates a group with the authenticated creator as owner and eligible friends as members. |
+| `GET/PATCH /groups/{conversationID}` | `name`, `description` | Gets or updates group information for active members; owner/admin capabilities are enforced by the backend. |
+| `GET/POST /groups/{conversationID}/members` | `member_ids` | Lists active public member summaries or adds eligible members as ordinary members. |
+| `DELETE /groups/{conversationID}/members/{userID}` | none | Owner removes members; admin may remove ordinary members only. |
+| `POST /groups/{conversationID}/leave` | none | Leaves the group; the final owner must transfer ownership first. |
+| `PATCH /groups/{conversationID}/members/{userID}/role` | `role` | Owner promotes/demotes members and admins; final-owner invariant is enforced. |
+| `POST/GET /groups/{conversationID}/invites` | expiry/max uses or none | Owner/admin creates an invite (raw token returned once) or lists non-secret invite metadata. |
+| `DELETE /groups/{conversationID}/invites/{inviteID}` | none | Owner/admin idempotently revokes an invite. |
+| `POST /group-invites/{token}/accept` | none | Hashes the opaque token, validates it transactionally, and joins/reactivates the authenticated user as a member. |
+| `GET /conversations/{conversationID}/messages` | `limit` (50/100), `offset` (0+) | Returns authorized direct/group history; group history is bounded by the current membership join time. |
+| `POST /conversations/{conversationID}/messages` | `content`, optional client/reply/forward IDs and structured mentions | Persists an authorized conversation message with duplicate-safe client ID handling, mentions, notifications, and per-member group deliveries. |
+| `POST /conversations/{conversationID}/messages/{messageID}/forward` | target conversation and optional client ID | Forwards a visible message through the normal idempotent send path. |
 | `PATCH /messages/{messageID}` | `{content}` | Sender-only message edit. |
 | `DELETE /messages/{messageID}` | none | Sender-only soft delete. |
-| `POST /messages/delivery` | `{message_id}`, `status` (`delivered`/`read`) | Recipient-only monotonic delivery update. |
+| `PUT /messages/{messageID}/reactions/{reaction}` | none | Adds the authenticated member's idempotent reaction to a visible message. |
+| `DELETE /messages/{messageID}/reactions/{reaction}` | none | Removes the authenticated member's reaction. |
+| `POST /messages/delivery` | `{message_id}`, `status` (`delivered`/`read`) | Recipient-only monotonic delivery update within the current membership visibility window. |
 | `POST /conversations/{conversationID}/read` | `{message_id}` | Marks the recipient's conversation messages through a message as read; read cursor cannot move backwards. |
 | `GET /unread` | none | Returns unread counts keyed by conversation ID. |
-| `POST /unread/read-all` | none | Marks incoming messages read in active (non-archived, non-hidden) conversations and returns receipt targets. |
+| `POST /unread/read-all` | none | Marks visible incoming messages read in active (non-archived, non-hidden) conversations and returns receipt targets. |
+| `GET /notifications` | `limit`, `offset` | Lists the authenticated user's newest notifications. |
+| `GET /notifications/unread` | none | Returns the unread notification count. |
+| `POST /notifications/{notificationID}/read` | none | Marks one owned notification read. |
+| `POST /notifications/read-all` | none | Marks all owned notifications read. |
+| `GET/PATCH /notification-preferences` | message/reply/mention booleans | Reads or updates the authenticated user's notification preferences. |
 | `GET /ws` | authenticated upgrade | Opens a WebSocket connection. |
 
-Message history includes the persisted per-recipient status. WebSocket delivery
+Message history includes persisted per-recipient status, forward provenance,
+reaction aggregates, and structured mention entities. WebSocket delivery
 status means the recipient client received the event and sent a server-authorized
 receipt; “sent” means persisted. Conversation access and message history/send operations check authenticated
-membership and the direct friendship/block relationship. Message edit/delete
+membership and direct friendship/block rules or active group membership. Message edit/delete
 is sender-only; replies are available through the message send contract and
 WebSocket mutation path. API errors are mostly stable only by HTTP status and
 human-readable message; there are no public error codes.
@@ -263,30 +289,36 @@ Envelope:
 {"event":"message","sender_id":"server-set","receiver_id":"user-id","receiver_type":"user","data":{}}
 ```
 
-For `message` to a user, the hub validates the envelope, derives the actor from
-the authenticated socket, calls the message service, persists first (including
-conversation and delivery creation), sends the persisted message to all active
-receiver connections, and sends an ack containing server/client IDs and status
-to the sender. Client IDs make retries duplicate-safe. Persistence or malformed
-payload failures send an `error` event. Direct messages require conversation
-membership, friendship, and no block.
+For `message`, the hub derives the actor from the authenticated socket and uses
+the persisted conversation to resolve authorized recipients. A client-supplied
+direct `receiver_id` cannot redirect content. Group recipients come from active
+database membership. The service persists first, including per-recipient delivery
+rows, then the hub routes canonical payloads and acknowledges server/client IDs
+and status. Client IDs make retries duplicate-safe. Correlated persistence or
+validation failures include client/conversation IDs where available. Direct
+messages require conversation membership, friendship, and no block.
 
 The server supports `message.edited`, `message.deleted`, `message.replied`,
 `message.delivered`, and `message.read` mutation/status events. These are
 authorized and persisted through `MessageService` before being routed and
-acknowledged. `typing` is authorized but intentionally ephemeral. The hub also
-broadcasts `user_online` on a user's first connection and `user_offline` after
-its last connection closes; the frontend accepts these event types but does
-not maintain a presence view.
+acknowledged. `typing` is authorized, timestamped, and intentionally ephemeral.
+Message events include persisted structured mention ranges. The hub also emits
+`notification.created` and `notification.read` to all local sessions of the
+recipient; clients refresh durable notification state after reconnect.
+The hub emits timestamped `user_online` on a user's first connection and
+`user_offline` after its last connection closes only to active friends and
+active shared-conversation members, excluding blocked or inactive users. Each
+connection receives an authoritative `presence.snapshot` for its permitted
+audience. This state is single-process and the frontend rejects stale updates.
 
 Connection controls are a 10 KB read limit, 60-second read deadline refreshed
 by pong, 10-second write deadline, 30-second ping, 10 inbound messages per
 second, and removal of clients whose send queue is full. The frontend retries
 up to five times with exponential delays starting at one second.
 
-**Scaffolded:** `ReceiverType: group`, `Room`, `CreateRoom`, and group routing
-exist in memory. There are no group routes, group persistence, or group UI. The
-hub is process-local; Redis is not used for WebSocket fan-out or presence.
+Group conversation persistence, administration, invite links, messaging, and UI
+are implemented. The hub is process-local; Redis is not used for WebSocket
+fan-out or presence.
 
 ## 10. Currently implemented features
 
@@ -300,25 +332,30 @@ hub is process-local; Redis is not used for WebSocket fan-out or presence.
   and unblocking.
 - Direct conversation creation/list/get, per-user archive/hide/pin/mute state,
   membership checks, message persistence, and REST history retrieval.
+- Group creation, metadata, roles, membership lifecycle, owner/admin invite-link
+  management, hashed-token acceptance, and group settings/chat UI.
 - Message edit/delete/reply, client-idempotent sends, persisted status in history,
   durable delivery/read state, unread summaries, and mark-all-read for active
   conversations through REST and service/repository paths.
 - Authenticated direct WebSocket delivery and mutation/status events, sender
-  identity protection, persistence ack/error, presence broadcast, ping/pong,
-  limits, and multiple connections per user.
+  identity protection, persistence ack/error, scoped single-server presence,
+  ping/pong, limits, and multiple connections per user.
 - React login/register, recovery/verification, private/public profile, friends/
   search/request, conversation list/preferences, and direct chat screens with
   pagination, optimistic send reconciliation, retry, realtime mutations, status
   updates, read marking, and unread loading.
+- Structured member mentions, owner/admin `@everyone`, safe mention highlighting,
+  and persisted in-app message/reply/mention notifications with mute/preferences.
 - PostgreSQL/Redis health checks and local Docker infrastructure.
 
 ## 11. Partial, scaffolded, and missing features
 
 ### Partial
 
-- Typing indicators are membership-authorized and display in direct chat, but
-  are ephemeral and not persisted.
-- Presence is emitted by the hub but not represented in frontend state.
+- Typing indicators are membership-authorized, support groups and multiple
+  users, and expire client-side, but are intentionally not persisted.
+- Presence is scoped and reconnect-hydrated, but remains single-server and has
+  no durable last-seen value.
 - Refresh lifecycle, localStorage token storage, and hard-coded frontend URL
   are usable locally but incomplete for production.
 - SMTP must be configured for email delivery outside development; a missing SMTP
@@ -326,19 +363,18 @@ hub is process-local; Redis is not used for WebSocket fan-out or presence.
 
 ### Scaffolded
 
-- Group chat types, room registry, `is_group`, and group routing.
+- Group chat room types remain an optional in-memory routing aid; persisted
+  conversation membership is the only authorization source.
 - User role field and TODO marker for admin actions.
 - Database `deleted_at` fields and model fields without complete behavior.
 
 ### Missing
 
-- Group management and membership persistence/UI.
-- Offline notifications and queued delivery while a recipient is disconnected.
-
+- External push notifications and durable WebSocket event replay.
 - Distributed WebSocket fan-out/presence for multiple backend instances.
-- Automated frontend tests, production application containers, and Kubernetes
-  manifests. PostgreSQL repository integration tests are available with the
-  `integration` build tag and require `TEST_DATABASE_URL`.
+- Production application containers and Kubernetes manifests. PostgreSQL
+  repository integration tests are available with the `integration` build tag
+  and require `TEST_DATABASE_URL`.
 
 ## 12. Configuration
 

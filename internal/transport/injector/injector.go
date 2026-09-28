@@ -20,16 +20,20 @@ type Container struct {
 	BlockRepo         repository.BlockRepository
 	MessageRepo       repository.MessageRepository
 	ConversationRepo  repository.ConversationRepository
+	NotificationRepo  repository.NotificationRepository
 
 	// Service
-	UserService          service.UserService
-	FriendService        service.FriendService
-	FriendRequestService service.FriendRequestService
-	BlockService         service.BlockService
-	MessageService       service.MessageService
-	MessageHTTPService   service.MessageHTTPService
-	ConversationService  service.ConversationService
-	AccountTokenService  *service.AccountTokenService
+	UserService              service.UserService
+	FriendService            service.FriendService
+	FriendRequestService     service.FriendRequestService
+	BlockService             service.BlockService
+	MessageService           service.MessageService
+	MessageHTTPService       service.MessageHTTPService
+	ConversationService      service.ConversationService
+	GroupConversationService service.GroupConversationService
+	AccountTokenService      *service.AccountTokenService
+	PresenceService          service.PresenceService
+	NotificationService      *service.NotificationService
 }
 
 // Init creates and wires dependencies.
@@ -45,6 +49,7 @@ func Init() *Container {
 	friendReqRepo := repository.FriendRequestRepositoryInit(db)
 	messageRepo := repository.NewMessageRepositoryImpl(db)
 	conversationRepo := repository.NewConversationRepository(db)
+	notificationRepo := repository.NewNotificationRepository(db)
 
 	// 2) Create services (business layer)
 	friendService := service.NewFriendServiceImpl(friendRepo)
@@ -53,7 +58,11 @@ func Init() *Container {
 	friendReqService := service.FriendRequestServiceInit(friendReqRepo, friendRepo, blockRepo)
 	messageService := service.NewMessageServiceImpl(messageRepo, friendRepo, blockRepo)
 	conversationService := service.NewConversationService(conversationRepo, friendRepo, blockRepo)
+	groupConversationService := service.NewGroupConversationService(conversationRepo, conversationRepo)
+	presenceService := service.NewPresenceService(conversationRepo)
+	notificationService := service.NewNotificationService(notificationRepo)
 	messageService.SetConversationRepository(conversationRepo)
+	messageService.SetNotificationPublisher(notificationService.PublishCreated)
 	delivery := accountDelivery(config.Config.App.Environment, config.Config.Email)
 	accountTokenService := service.NewAccountTokenService(userRepo, delivery)
 	userService.SetVerificationSender(accountTokenService)
@@ -71,7 +80,11 @@ func Init() *Container {
 		MessageService:       messageService,
 		MessageHTTPService:   messageService,
 		ConversationRepo:     conversationRepo, ConversationService: conversationService,
-		AccountTokenService: accountTokenService,
+		GroupConversationService: groupConversationService,
+		AccountTokenService:      accountTokenService,
+		PresenceService:          presenceService,
+		NotificationRepo:         notificationRepo,
+		NotificationService:      notificationService,
 	}
 }
 

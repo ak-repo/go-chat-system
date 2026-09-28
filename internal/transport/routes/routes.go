@@ -73,6 +73,18 @@ func Router() chi.Router {
 			pr.Get("/conversations/{conversationID}", wrapper.HTTPResponseWrapper(app.ConversationService.Get))
 			pr.Patch("/conversations/{conversationID}/preferences", wrapper.HTTPResponseWrapper(app.ConversationService.Preferences))
 			pr.Delete("/conversations/{conversationID}", wrapper.HTTPResponseWrapper(app.ConversationService.Delete))
+			pr.Post("/groups", wrapper.HTTPResponseWrapper(app.GroupConversationService.CreateGroup))
+			pr.Get("/groups/{conversationID}", wrapper.HTTPResponseWrapper(app.GroupConversationService.GetGroup))
+			pr.Patch("/groups/{conversationID}", wrapper.HTTPResponseWrapper(app.GroupConversationService.UpdateGroup))
+			pr.Get("/groups/{conversationID}/members", wrapper.HTTPResponseWrapper(app.GroupConversationService.ListGroupMembers))
+			pr.Post("/groups/{conversationID}/members", wrapper.HTTPResponseWrapper(app.GroupConversationService.AddGroupMembers))
+			pr.Delete("/groups/{conversationID}/members/{userID}", wrapper.HTTPResponseWrapper(app.GroupConversationService.RemoveGroupMember))
+			pr.Post("/groups/{conversationID}/leave", wrapper.HTTPResponseWrapper(app.GroupConversationService.LeaveGroup))
+			pr.Patch("/groups/{conversationID}/members/{userID}/role", wrapper.HTTPResponseWrapper(app.GroupConversationService.UpdateGroupMemberRole))
+			pr.Post("/groups/{conversationID}/invites", wrapper.HTTPResponseWrapper(app.GroupConversationService.CreateGroupInvite))
+			pr.Get("/groups/{conversationID}/invites", wrapper.HTTPResponseWrapper(app.GroupConversationService.ListGroupInvites))
+			pr.Delete("/groups/{conversationID}/invites/{inviteID}", wrapper.HTTPResponseWrapper(app.GroupConversationService.RevokeGroupInvite))
+			pr.Post("/group-invites/{token}/accept", wrapper.HTTPResponseWrapper(app.GroupConversationService.AcceptGroupInvite))
 
 			// Friends
 			pr.Get("/friends", wrapper.HTTPResponseWrapper(app.FriendService.ListFriends))
@@ -95,15 +107,25 @@ func Router() chi.Router {
 			// Messages
 			pr.Get("/conversations/{conversationID}/messages", wrapper.HTTPResponseWrapper(app.MessageHTTPService.History))
 			pr.Post("/conversations/{conversationID}/messages", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Send))
+			pr.Post("/conversations/{conversationID}/messages/{messageID}/forward", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Forward))
 			pr.Get("/unread", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Unread))
 			pr.Post("/unread/read-all", wrapper.HTTPResponseWrapper(app.MessageHTTPService.ReadAll))
 			pr.Patch("/messages/{messageID}", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Edit))
 			pr.Delete("/messages/{messageID}", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Delete))
+			pr.Put("/messages/{messageID}/reactions/{reaction}", wrapper.HTTPResponseWrapper(app.MessageHTTPService.AddReaction))
+			pr.Delete("/messages/{messageID}/reactions/{reaction}", wrapper.HTTPResponseWrapper(app.MessageHTTPService.RemoveReaction))
 			pr.Post("/messages/delivery", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Delivery))
 			pr.Post("/conversations/{conversationID}/read", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Read))
+			pr.Get("/notifications", wrapper.HTTPResponseWrapper(app.NotificationService.List))
+			pr.Get("/notifications/unread", wrapper.HTTPResponseWrapper(app.NotificationService.Unread))
+			pr.Post("/notifications/{notificationID}/read", wrapper.HTTPResponseWrapper(app.NotificationService.Read))
+			pr.Post("/notifications/read-all", wrapper.HTTPResponseWrapper(app.NotificationService.ReadAll))
+			pr.Get("/notification-preferences", wrapper.HTTPResponseWrapper(app.NotificationService.Preferences))
+			pr.Patch("/notification-preferences", wrapper.HTTPResponseWrapper(app.NotificationService.Preferences))
 
 			// Websocket - higher rate limit to allow frequent connections
-			GlobalHub = websocket.NewHub(app.MessageService)
+			GlobalHub = websocket.NewHub(app.MessageService, app.PresenceService)
+			app.NotificationService.SetPublisher(GlobalHub.Publish)
 			GlobalHub.SetSessionChecker(func(ctx context.Context, uid, sid string) bool {
 				u, userErr := app.UserRepo.GetByID(ctx, uid)
 				if userErr != nil || u == nil || u.VerifiedAt == nil {

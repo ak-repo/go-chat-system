@@ -30,6 +30,8 @@ type fakeMessageRepo struct {
 	unread          map[string]int
 	readAllUser     string
 	readAllReceipts []model.ReadReceipt
+	reactions       []model.ReactionAggregate
+	reactionAdded   bool
 }
 
 func (f *fakeMessageRepo) CreateMessage(_ context.Context, msg *model.Message) error {
@@ -79,6 +81,13 @@ func (f *fakeMessageRepo) UnreadSummary(context.Context, string) (map[string]int
 func (f *fakeMessageRepo) MarkAllActiveRead(_ context.Context, user string, _ time.Time) ([]model.ReadReceipt, error) {
 	f.readAllUser = user
 	return f.readAllReceipts, f.mutationErr
+}
+func (f *fakeMessageRepo) GetVisibleMessage(context.Context, string, string) (*model.Message, error) {
+	return f.target, f.err
+}
+func (f *fakeMessageRepo) SetReaction(_ context.Context, _ string, _ string, _ string, add bool) ([]model.ReactionAggregate, bool, error) {
+	f.reactionAdded = add
+	return f.reactions, true, f.mutationErr
 }
 
 type fakeFriendRepo struct {
@@ -147,6 +156,28 @@ func TestGetMessagesUsesMiddlewareUserIDKey(t *testing.T) {
 	}
 	if got := data["offset"]; got != 0 {
 		t.Fatalf("expected offset 0, got %#v", got)
+	}
+}
+
+func TestValidateMentionsRejectsInvalidRangesAndTargets(t *testing.T) {
+	userID := uuid.NewString()
+	if err := validateMentions("hello @sam", []model.MessageMention{{Kind: "user", UserID: userID, Offset: 6, Length: 4}}); err != nil {
+		t.Fatalf("valid mention rejected: %v", err)
+	}
+	for _, mentions := range [][]model.MessageMention{
+		{{Kind: "user", UserID: "not-a-uuid", Offset: 0, Length: 1}},
+		{{Kind: "everyone", Offset: 20, Length: 1}},
+		{{Kind: "everyone", Offset: 0, Length: 1}, {Kind: "everyone", Offset: 2, Length: 1}},
+		{{Kind: "user", UserID: userID, Offset: 1, Length: 3}, {Kind: "user", UserID: userID, Offset: 2, Length: 2}},
+		{{Kind: "user", UserID: userID, Offset: 1, Length: 1}},
+	} {
+		body := "hello @sam"
+		if mentions[0].Offset == 1 && mentions[0].Length == 1 && len(mentions) == 1 {
+			body = "😀 hello"
+		}
+		if err := validateMentions(body, mentions); !errors.Is(err, errs.ErrValidation) {
+			t.Fatalf("expected validation failure for %#v, got %v", mentions, err)
+		}
 	}
 }
 
@@ -262,7 +293,7 @@ func TestCreateMessageRejectsOversizedBody(t *testing.T) {
 }
 
 func TestHandleRealtimeAuthorizesMemberAndSender(t *testing.T) {
-	conversation := &fakeConversationRepo{}
+	conversation := &fakeConversationRepo{conversation: &model.Conversation{ID: "conversation-1", Kind: "direct", UserOneID: "user-1", UserTwoID: "user-2"}}
 	message := &fakeMessageRepo{target: &model.Message{ID: "message-1", SenderID: "user-1", ReceiverID: "user-2", ConversationID: "conversation-1"}}
 	service := NewMessageServiceImpl(message, fakeFriendRepo{areFriends: true}, fakeBlockRepo{})
 	service.SetConversationRepository(conversation)
@@ -284,7 +315,7 @@ func TestHandleRealtimeRejectsUnknownEventAndDependencyError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected membership dependency error")
 	}
-	service.SetConversationRepository(&fakeConversationRepo{})
+	service.SetConversationRepository(&fakeConversationRepo{conversation: &model.Conversation{ID: "conversation-1", Kind: "direct", UserOneID: "user-1", UserTwoID: "user-1"}})
 	_, err = service.HandleRealtimeResult(context.Background(), "user-1", RealtimeEvent{Event: "message.unknown", ConversationID: "conversation-1", MessageID: "message-1"})
 	if !errors.Is(err, errs.ErrForbidden) {
 		t.Fatalf("expected missing receiver to fail authorization, got %v", err)
@@ -372,7 +403,7 @@ func TestRealtimeMutationsAuthorizeAndPersist(t *testing.T) {
 	target := &model.Message{ID: uuid.NewString(), SenderID: "user-1", ReceiverID: "user-2", ConversationID: cid}
 	repo := &fakeMessageRepo{target: target}
 	service := NewMessageServiceImpl(repo, fakeFriendRepo{areFriends: true}, fakeBlockRepo{})
-	service.SetConversationRepository(&fakeConversationRepo{})
+	service.SetConversationRepository(&fakeConversationRepo{conversation: &model.Conversation{ID: cid, Kind: "direct", UserOneID: "user-1", UserTwoID: "user-2"}})
 	for _, event := range []string{"message.deleted", "message.delivered", "message.read"} {
 		actor := "user-1"
 		if event != "message.deleted" {
@@ -390,5 +421,17 @@ func TestRealtimeMutationsAuthorizeAndPersist(t *testing.T) {
 	_, err = service.HandleRealtimeResult(context.Background(), "user-2", RealtimeEvent{Event: "message.replied", ConversationID: cid, MessageID: target.ID, ReceiverID: "user-1"})
 	if !errors.Is(err, errs.ErrValidation) {
 		t.Fatalf("expected reply validation, got %v", err)
+	}
+}
+
+func TestRealtimeReactionReturnsCanonicalAggregate(t *testing.T) {
+	cid := uuid.NewString()
+	target := &model.Message{ID: uuid.NewString(), SenderID: "user-1", ReceiverID: "user-2", ConversationID: cid}
+	repo := &fakeMessageRepo{target: target, reactions: []model.ReactionAggregate{{Reaction: "👍", Count: 2, ReactedByMe: true}}}
+	svc := NewMessageServiceImpl(repo, fakeFriendRepo{areFriends: true}, fakeBlockRepo{})
+	svc.SetConversationRepository(&fakeConversationRepo{conversation: &model.Conversation{ID: cid, Kind: "direct", UserOneID: "user-1", UserTwoID: "user-2"}})
+	result, err := svc.HandleRealtimeResult(context.Background(), "user-2", RealtimeEvent{Event: "message.reaction.added", ConversationID: cid, MessageID: target.ID, ReceiverID: "spoofed-user", Reaction: "👍"})
+	if err != nil || result == nil || result.ReceiverID != "user-1" || !repo.reactionAdded || len(result.Reactions) != 1 || result.Reactions[0].Count != 2 {
+		t.Fatalf("canonical reaction: %#v %v", result, err)
 	}
 }

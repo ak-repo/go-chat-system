@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,7 +20,8 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result.success) {
-      navigate('/friends', { replace: true });
+      const from = (location.state as { from?: unknown } | null)?.from;
+      navigate(typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/friends', { replace: true });
     } else {
       setError(result.error || 'Login failed');
     }
@@ -77,11 +79,11 @@ export default function LoginPage() {
 
         <p className="mt-6 text-center text-sm text-slate-400">
           Don't have an account?{' '}
-          <Link to="/register" className="font-semibold text-blue-400 hover:text-blue-300">
+          <Link to="/register" state={location.state} className="font-semibold text-blue-400 hover:text-blue-300">
             Register
           </Link>
         </p>
-        <p className="mt-3 text-center text-sm"><Link to="/verify" className="font-semibold text-blue-400 hover:text-blue-300">Need to verify your email?</Link></p>
+        <p className="mt-3 text-center text-sm"><Link to="/verify" state={location.state} className="font-semibold text-blue-400 hover:text-blue-300">Need to verify your email?</Link></p>
       </div>
     </div>
   );

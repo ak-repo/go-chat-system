@@ -7,20 +7,19 @@ implementation inventory remains [`../docs/CODEBASE.md`](../docs/CODEBASE.md).
 
 ## Status
 
-Planned. No Phase 2 feature is complete solely because a database field, event
-name, or UI scaffold already exists. Completion requires an authorized backend
-contract, persistence where appropriate, frontend integration, and verification
-of important success and failure paths.
+Implemented with automated verification. Core groups, conversation-centric
+messaging, scoped single-server presence, group typing, interactions, mentions,
+in-app notifications, and invite links are integrated. Manual multi-client
+validation remains outstanding; avatar upload, external push, distributed
+fan-out, durable replay, and last seen remain explicitly deferred.
 
-Some Phase 2 capabilities are partially available from Phase 1:
+The Phase 1 foundation that Phase 2 extended included:
 
-- Reply persistence, REST/WebSocket delivery, and basic reply UI exist.
-- Direct-chat typing uses an ephemeral boolean WebSocket event.
-- The WebSocket hub emits process-local online/offline events.
-- Per-conversation mute state is persisted, but no notification system consumes
-  it.
-- Group-related message fields and an in-memory room type are scaffolding only;
-  they are not a secure or persisted group-chat implementation.
+- Reply persistence, REST/WebSocket delivery, and basic reply UI.
+- Direct-chat typing via an ephemeral boolean WebSocket event.
+- Process-local online/offline events and per-conversation mute preferences.
+- Group-related message fields and an in-memory room type, which were scaffolding
+  before the Phase 2 implementation described in this plan.
 
 The roadmap must be updated as each coherent increment is completed so it can
 distinguish implemented, partial, and deferred behavior.
@@ -389,7 +388,7 @@ unknown state and the roadmap marks last seen deferred.
 - Forwarding never grants access to source content the actor cannot read.
 - Context actions are usable on keyboard, pointer, and mobile-width interfaces.
 
-### 8. Mentions
+### 8. Mentions (complete)
 
 **Changes**
 
@@ -412,7 +411,7 @@ unknown state and the roadmap marks last seen deferred.
 - Mention rendering is XSS-safe and remains correct after username changes.
 - Mention persistence and message creation are transactional.
 
-### 9. In-app notifications and preferences
+### 9. In-app notifications and preferences (complete)
 
 **Persistence and backend changes**
 
@@ -488,7 +487,7 @@ database state remain authoritative after reconnect.
 11. Complete reply UX, context actions, copy, forwarding, and reactions.
 12. Implement mentions and `@everyone` authorization.
 13. Implement in-app notifications, preferences, and mute behavior.
-14. Implement group invite links.
+14. Implement group invite links. (complete)
 15. Update roadmap, codebase, deployment/runtime documentation, and complete the
     full review and verification matrix.
 
@@ -577,21 +576,21 @@ As increments land, update:
 
 ## Phase 2 completion checklist
 
-- [ ] Group schema and membership-role constraints are migrated safely.
-- [ ] Group creation, metadata, member lifecycle, and role management are complete.
-- [ ] Direct and group messaging are conversation-centric and authorized.
-- [ ] Group delivery/read/unread state works per recipient.
-- [ ] Frontend conversation routing and models support direct and group chats.
-- [ ] Group creation, chat, settings, and administration UI are usable.
-- [ ] Presence is scoped, initialized, displayed, and documented as single-server.
-- [ ] Direct/group typing supports cleanup, expiry, and multiple users.
-- [ ] Reply UX, copy, forwarding, context actions, and reactions are complete.
-- [ ] Mentions and permission-controlled `@everyone` are complete.
-- [ ] In-app notifications, preferences, and mute behavior are complete.
-- [ ] Invite links are hashed, expiring, revocable, and authorization-protected.
-- [ ] Backend unit and PostgreSQL integration tests pass.
-- [ ] Frontend tests, lint, and production build pass.
+- [x] Group schema and membership-role constraints are migrated safely.
+- [x] Group creation, metadata, member lifecycle, and role management are complete.
+- [x] Direct and group messaging are conversation-centric and authorized.
+- [x] Group delivery/read/unread state works per recipient.
+- [x] Frontend conversation routing and models support direct and group chats.
+- [x] Group creation, chat, settings, and administration UI are usable.
+- [x] Presence is scoped, initialized, displayed, and documented as single-server.
+- [x] Direct/group typing supports cleanup, expiry, and multiple users.
+- [x] Reply UX, copy, forwarding, context actions, and reactions are complete.
+- [x] Mentions and permission-controlled `@everyone` are complete.
+- [x] In-app notifications, preferences, and mute behavior are complete.
+- [x] Invite links are hashed, expiring, revocable, and authorization-protected.
+- [x] Backend unit and PostgreSQL integration tests pass.
+- [x] Frontend tests, lint, and production build pass.
 - [ ] Manual multi-client authorization and realtime scenarios pass.
-- [ ] Roadmap and canonical codebase documentation match shipped behavior.
-- [ ] Deferred avatar upload, external push, distributed fan-out, and replay are
+- [x] Roadmap and canonical codebase documentation match shipped behavior.
+- [x] Deferred avatar upload, external push, distributed fan-out, and replay are
       clearly documented and are not represented as complete.

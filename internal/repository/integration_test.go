@@ -19,6 +19,77 @@ import (
 
 var migrationMu sync.Mutex
 
+type integrationMigration struct {
+	filename string
+	applied  func(context.Context, *pgxpool.Pool) (bool, error)
+}
+
+func applyIntegrationMigrations(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate integration test source")
+	}
+	migrationsDir := filepath.Join(filepath.Dir(file), "..", "..", "migrations")
+	migrations := []integrationMigration{
+		{"20260829120500_canonical_schema.sql", func(ctx context.Context, db *pgxpool.Pool) (bool, error) {
+			var exists bool
+			err := db.QueryRow(ctx, "SELECT to_regclass('public.users') IS NOT NULL").Scan(&exists)
+			return exists, err
+		}},
+		{"20260925090000_conversation_user_state.sql", func(ctx context.Context, db *pgxpool.Pool) (bool, error) {
+			var exists bool
+			err := db.QueryRow(ctx, "SELECT to_regclass('public.conversation_user_state') IS NOT NULL").Scan(&exists)
+			return exists, err
+		}},
+		{"20260927120000_group_conversations.sql", func(ctx context.Context, db *pgxpool.Pool) (bool, error) {
+			var exists bool
+			err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='conversations' AND column_name='creator_id')`).Scan(&exists)
+			return exists, err
+		}},
+		{"20260927150000_message_interactions.sql", func(ctx context.Context, db *pgxpool.Pool) (bool, error) {
+			var exists bool
+			err := db.QueryRow(ctx, "SELECT to_regclass('public.message_reactions') IS NOT NULL").Scan(&exists)
+			return exists, err
+		}},
+		{"20260927180000_mentions_notifications.sql", func(ctx context.Context, db *pgxpool.Pool) (bool, error) {
+			var exists bool
+			err := db.QueryRow(ctx, "SELECT to_regclass('public.notifications') IS NOT NULL").Scan(&exists)
+			return exists, err
+		}},
+		{"20260927210000_group_invites.sql", func(ctx context.Context, db *pgxpool.Pool) (bool, error) {
+			var exists bool
+			err := db.QueryRow(ctx, "SELECT to_regclass('public.group_invites') IS NOT NULL").Scan(&exists)
+			return exists, err
+		}},
+		{"20260927230000_phase2_integrity_fixes.sql", func(ctx context.Context, db *pgxpool.Pool) (bool, error) {
+			var exists bool
+			err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname='notifications_message_conversation_fkey')`).Scan(&exists)
+			return exists, err
+		}},
+	}
+	for _, migration := range migrations {
+		applied, err := migration.applied(ctx, pool)
+		if err != nil {
+			t.Fatalf("check migration %s: %v", migration.filename, err)
+		}
+		if applied {
+			continue
+		}
+		contents, err := os.ReadFile(filepath.Join(migrationsDir, migration.filename))
+		if err != nil {
+			t.Fatalf("read migration %s: %v", migration.filename, err)
+		}
+		parts := strings.SplitN(string(contents), "-- +goose Down", 2)
+		if len(parts) != 2 {
+			t.Fatalf("migration %s has no goose Down section", migration.filename)
+		}
+		if _, err = pool.Exec(ctx, parts[0]); err != nil {
+			t.Fatalf("apply migration %s: %v", migration.filename, err)
+		}
+	}
+}
+
 func integrationDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
@@ -39,39 +110,8 @@ func integrationDB(t *testing.T) *pgxpool.Pool {
 
 	migrationMu.Lock()
 	defer migrationMu.Unlock()
-	var exists bool
-	if err := pool.QueryRow(ctx, "SELECT to_regclass('public.users') IS NOT NULL").Scan(&exists); err != nil {
-		t.Fatalf("check test schema: %v", err)
-	}
-	if !exists {
-		_, file, _, _ := runtime.Caller(0)
-		migrationPath := filepath.Join(filepath.Dir(file), "..", "..", "migrations", "20260829120500_canonical_schema.sql")
-		sql, err := os.ReadFile(migrationPath)
-		if err != nil {
-			t.Fatalf("read canonical migration: %v", err)
-		}
-		up := strings.SplitN(string(sql), "-- +goose Down", 2)[0]
-		if _, err := pool.Exec(ctx, up); err != nil {
-			t.Fatalf("apply canonical migration: %v", err)
-		}
-	}
-	var stateTable bool
-	if err := pool.QueryRow(ctx, "SELECT to_regclass('public.conversation_user_state') IS NOT NULL").Scan(&stateTable); err != nil {
-		t.Fatalf("check phase 1 migration: %v", err)
-	}
-	if !stateTable {
-		_, file, _, _ := runtime.Caller(0)
-		migrationPath := filepath.Join(filepath.Dir(file), "..", "..", "migrations", "20260925090000_conversation_user_state.sql")
-		sql, err := os.ReadFile(migrationPath)
-		if err != nil {
-			t.Fatalf("read phase 1 migration: %v", err)
-		}
-		up := strings.SplitN(string(sql), "-- +goose Down", 2)[0]
-		if _, err := pool.Exec(ctx, up); err != nil {
-			t.Fatalf("apply phase 1 migration: %v", err)
-		}
-	}
-	if _, err := pool.Exec(ctx, `TRUNCATE TABLE conversation_read_state, message_deliveries, messages, conversation_members, conversations, account_tokens, sessions, friend_requests, blocks, friends, users CASCADE`); err != nil {
+	applyIntegrationMigrations(t, ctx, pool)
+	if _, err := pool.Exec(ctx, `TRUNCATE TABLE group_invites, notifications, notification_preferences, message_mentions, message_reactions, conversation_read_state, conversation_user_state, message_deliveries, messages, conversation_members, conversations, account_tokens, sessions, friend_requests, blocks, friends, users CASCADE`); err != nil {
 		t.Fatalf("reset test database: %v", err)
 	}
 	return pool
