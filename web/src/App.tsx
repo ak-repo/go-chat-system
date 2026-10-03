@@ -15,6 +15,7 @@ import GroupSettingsPage from './pages/GroupSettingsPage';
 import DirectChatResolver from './pages/DirectChatResolver';
 import NotificationsPage from './pages/NotificationsPage';
 import InviteAcceptancePage from './pages/InviteAcceptancePage';
+import AppShell from './components/AppShell';
 
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -33,7 +34,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} />;
   }
 
-  return <>{children}</>;
+  return <AppShell>{children}</AppShell>;
 }
 
 // Public route wrapper (redirect if already logged in)

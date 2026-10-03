@@ -41,6 +41,7 @@ import {
   type TypingByConversation,
 } from "../context/realtimeState";
 import MentionText from "../components/MentionText";
+import ConversationSidebar from "../components/ConversationSidebar";
 
 const PAGE_SIZE = 50;
 const TYPING_IDLE_MS = 1000;
@@ -50,7 +51,7 @@ const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"] as co
 export default function ChatPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const {
     isConnected,
     presence,
@@ -60,7 +61,6 @@ export default function ChatPage() {
     onAck,
     onError,
     onEvent,
-    notificationUnread,
     clearConversationUnread,
   } = useSocket();
   const [conversation, setConversation] = useState<Conversation | null>(null);
@@ -885,39 +885,22 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="app-shell flex min-h-screen flex-col">
+    <div className="app-shell chat-workspace flex min-h-screen flex-col">
+      <ConversationSidebar />
+      <div className="chat-column">
       <header className="app-header shrink-0">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-          <Link
-            to="/conversations"
-            className="text-sm font-semibold text-blue-400"
-          >
-            ← All chats
-          </Link>
-          <div className="flex items-center gap-4">
-            <Link to="/notifications" className="text-sm text-blue-300">
-              Notifications
-              {notificationUnread > 0 ? ` (${notificationUnread})` : ""}
-            </Link>
-            <span
-              className={
-                isConnected
-                  ? "text-sm text-emerald-400"
-                  : "text-sm text-red-300"
-              }
-            >
-              {isConnected ? "Connected" : "Disconnected"}
-            </span>
-            <button
-              onClick={() => {
-                void logout();
-                navigate("/login");
-              }}
-              className="text-sm text-slate-400"
-            >
-              Logout
-            </button>
-          </div>
+        <div className="chat-topbar">
+          <Link to="/conversations" className="chat-back-link" aria-label="Back to chats">‹</Link>
+          <div className="avatar h-10 w-10">{conversationInitials(title)}</div>
+          <div className="chat-topbar-title"><p>{title}</p><span>{conversation.kind === "group" ? `${conversation.member_count} members` : presence[peerId]?.online ? "Online" : presence[peerId] ? "Offline" : "Presence unknown"}</span></div>
+          <span className={`connection-pill${isConnected ? ' connected' : ''}`}><i />{isConnected ? "Connected" : "Reconnecting"}</span>
+          <details className="chat-actions-menu"><summary aria-label="Conversation actions">•••</summary><div className="chat-header-actions">
+            {conversation.kind === "group" && <Link to={`/conversations/${conversationId}/settings`} className="soft-button px-3 py-2 text-xs">Group details</Link>}
+            <button onClick={() => void mutate({ pinned: !conversation.pinned })} className="soft-button px-3 py-2 text-xs">{conversation.pinned ? "Unpin" : "Pin"}</button>
+            <button onClick={() => void mutate({ archived: !conversation.archived })} className="soft-button px-3 py-2 text-xs">{conversation.archived ? "Unarchive" : "Archive"}</button>
+            <button onClick={() => void mutate({ mute_minutes: conversation.muted ? 0 : 1440 })} className="soft-button px-3 py-2 text-xs">{conversation.muted ? "Unmute" : "Mute"}</button>
+            <button onClick={() => void hideCurrent()} className="soft-button px-3 py-2 text-xs text-red-300">Hide</button>
+          </div></details>
         </div>
       </header>
       {error && (
@@ -927,63 +910,6 @@ export default function ChatPage() {
       )}
       <main className="chat-pattern scrollbar-thin flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <div className="mx-auto flex max-w-3xl flex-col space-y-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-[#25364d] pb-5">
-            <div className="flex items-center gap-3">
-              <div className="avatar h-11 w-11">
-                {conversationInitials(title)}
-              </div>
-              <div>
-                <p className="font-semibold text-white">{title}</p>
-                <p className="text-xs text-slate-400">
-                  {conversation.kind === "group"
-                    ? `${conversation.member_count} members`
-                    : presence[peerId]
-                      ? presence[peerId].online
-                        ? "Online"
-                        : "Offline"
-                      : "Presence unknown"}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {conversation.kind === "group" && (
-                <Link
-                  to={`/conversations/${conversationId}/settings`}
-                  className="soft-button px-3 py-2 text-xs"
-                >
-                  Group settings
-                </Link>
-              )}
-              <button
-                onClick={() => void mutate({ pinned: !conversation.pinned })}
-                className="soft-button px-3 py-2 text-xs"
-              >
-                {conversation.pinned ? "Unpin" : "Pin"}
-              </button>
-              <button
-                onClick={() =>
-                  void mutate({ archived: !conversation.archived })
-                }
-                className="soft-button px-3 py-2 text-xs"
-              >
-                {conversation.archived ? "Unarchive" : "Archive"}
-              </button>
-              <button
-                onClick={() =>
-                  void mutate({ mute_minutes: conversation.muted ? 0 : 1440 })
-                }
-                className="soft-button px-3 py-2 text-xs"
-              >
-                {conversation.muted ? "Unmute" : "Mute 24h"}
-              </button>
-              <button
-                onClick={() => void hideCurrent()}
-                className="soft-button px-3 py-2 text-xs text-red-300"
-              >
-                Hide
-              </button>
-            </div>
-          </div>
           {hasMore && (
             <button
               onClick={() => void load(true)}
@@ -1249,6 +1175,7 @@ export default function ChatPage() {
             Send
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

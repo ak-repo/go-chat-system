@@ -12,10 +12,9 @@ import {
   type FriendRequest,
   type User,
 } from '../api';
-import { appName } from '../config/app';
 
 export default function FriendsPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
@@ -108,11 +107,6 @@ export default function FriendsPage() {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
-  };
-
   const handleChat = (friendId: string) => {
     navigate(`/chat/${friendId}`);
   };
@@ -127,27 +121,6 @@ export default function FriendsPage() {
 
   return (
     <div className="app-shell">
-      {/* Header */}
-      <header className="app-header">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="avatar h-10 w-10 text-lg">{appName.charAt(0).toUpperCase()}</div>
-            <h1 className="text-lg sm:text-xl font-bold tracking-tight">{appName}</h1>
-          </div>
-          <div className="flex items-center gap-3 sm:gap-5">
-            <span className="hidden sm:block text-sm text-slate-300">{user?.username}</span>
-            <button onClick={() => navigate('/profile')} className="soft-button px-3 py-2 text-sm">Profile</button>
-            <button onClick={() => navigate('/conversations')} className="soft-button px-3 py-2 text-sm">Chats</button>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-slate-400 hover:text-red-300"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
-
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         <div className="mb-8">
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-400">Your network</p>
