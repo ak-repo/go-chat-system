@@ -2,6 +2,8 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
+  Fragment,
   useRef,
   useState,
   type FormEvent,
@@ -41,7 +43,11 @@ import {
   type TypingByConversation,
 } from "../context/realtimeState";
 import MentionText from "../components/MentionText";
-import ConversationSidebar from "../components/ConversationSidebar";
+import Icon from "../components/Icon";
+import MessageComposer from "../components/MessageComposer";
+import MessageReceipt from "../components/MessageReceipt";
+import { useConversations } from "../context/ConversationContext";
+import { useDialogs } from "../context/DialogContext";
 
 const PAGE_SIZE = 50;
 const TYPING_IDLE_MS = 1000;
@@ -51,6 +57,8 @@ const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🎉"] as co
 export default function ChatPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const navigate = useNavigate();
+  const { refresh, recordMessages } = useConversations();
+  const { confirm, askText } = useDialogs();
   const { user } = useAuth();
   const {
     isConnected,
@@ -90,6 +98,10 @@ export default function ChatPage() {
   } | null>(null);
   const lastReadMessage = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HTMLElement>(null);
+  const followLatest = useRef(true);
+  const olderScroll = useRef<{ height: number; top: number } | null>(null);
+  const [showJump, setShowJump] = useState(false);
   const requestVersion = useRef(0);
   const paginationInFlight = useRef<object | null>(null);
   const offsetRef = useRef(0);
@@ -101,6 +113,18 @@ export default function ChatPage() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    if (conversationId && conversation?.id === conversationId && !loading) recordMessages(conversationId, messages);
+  }, [messages, conversationId, conversation?.id, loading, recordMessages]);
+  useLayoutEffect(() => {
+    const history = historyRef.current;
+    if (!history) return;
+    if (olderScroll.current) {
+      history.scrollTop = olderScroll.current.top + history.scrollHeight - olderScroll.current.height;
+      olderScroll.current = null;
+    } else if (followLatest.current) history.scrollTop = history.scrollHeight;
+  }, [messages, loading]);
 
   const peerId =
     conversation?.kind === "direct"
@@ -172,6 +196,7 @@ export default function ChatPage() {
         if (version !== requestVersion.current) return;
         if (!result.success || !result.data)
           throw new Error(result.error || "Failed to load messages");
+        if (older && historyRef.current) olderScroll.current = { height: historyRef.current.scrollHeight, top: historyRef.current.scrollTop };
         setMessages((current) =>
           older
             ? mergeMessagePages(current, result.data?.messages ?? [])
@@ -212,6 +237,10 @@ export default function ChatPage() {
     if (typingTimer.current) clearTimeout(typingTimer.current);
     requestVersion.current += 1;
     lastReadMessage.current = null;
+    followLatest.current = true;
+    olderScroll.current = null;
+    setShowJump(false);
+    setInput("");
     setConversation(null);
     setMessages([]);
     setMemberNames({});
@@ -533,7 +562,7 @@ export default function ChatPage() {
           { message_id: incoming.id },
         );
     }
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+
   }, [
     conversation,
     conversationId,
@@ -571,15 +600,15 @@ export default function ChatPage() {
   if (!conversationId) return <Navigate to="/conversations" replace />;
   if (loading)
     return (
-      <div className="app-shell flex min-h-screen items-center justify-center text-slate-300">
+      <div className="app-shell flex min-h-screen items-center justify-center text-secondary">
         Loading conversation...
       </div>
     );
   if (!conversation)
     return (
-      <div className="app-shell flex min-h-screen flex-col items-center justify-center gap-4 text-red-300">
+      <div className="app-shell flex min-h-screen flex-col items-center justify-center gap-4 text-danger">
         <p>{error || "Conversation unavailable"}</p>
-        <Link to="/conversations" className="text-blue-400">
+        <Link to="/conversations" className="text-accent">
           Back to conversations
         </Link>
       </div>
@@ -727,17 +756,17 @@ export default function ChatPage() {
     mute_minutes?: number;
   }) => {
     const result = await updateConversationPreferences(conversationId, patch);
-    if (result.data) setConversation(result.data);
+    if (result.data) { setConversation(result.data); refresh(); }
     else setError(result.error || "Could not update conversation");
   };
   const hideCurrent = async () => {
-    if (!window.confirm("Hide this conversation from your list?")) return;
+    if (!await confirm("Hide this conversation from your list?")) return;
     const result = await hideConversation(conversationId);
-    if (result.success) navigate("/conversations");
+    if (result.success) { refresh(); navigate("/conversations"); }
     else setError(result.error || "Could not hide conversation");
   };
-  const edit = (message: Message) => {
-    const content = window.prompt("Edit message", message.content)?.trim();
+  const edit = async (message: Message) => {
+    const content = (await askText("Edit message", message.content))?.trim();
     if (
       content &&
       sendConversationEvent(
@@ -756,9 +785,9 @@ export default function ChatPage() {
         ),
       );
   };
-  const remove = (message: Message) => {
+  const remove = async (message: Message) => {
     if (
-      window.confirm("Delete this message?") &&
+      await confirm("Delete this message?") &&
       sendConversationEvent(
         "message.deleted",
         conversationId,
@@ -885,57 +914,62 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="app-shell chat-workspace flex min-h-screen flex-col">
-      <ConversationSidebar />
+    <div className="chat-workspace">
       <div className="chat-column">
       <header className="app-header shrink-0">
         <div className="chat-topbar">
-          <Link to="/conversations" className="chat-back-link" aria-label="Back to chats">‹</Link>
+          <Link to="/conversations" className="chat-back-link" aria-label="Back to chats"><Icon name="back" /></Link>
           <div className="avatar h-10 w-10">{conversationInitials(title)}</div>
-          <div className="chat-topbar-title"><p>{title}</p><span>{conversation.kind === "group" ? `${conversation.member_count} members` : presence[peerId]?.online ? "Online" : presence[peerId] ? "Offline" : "Presence unknown"}</span></div>
+          <div className="chat-topbar-title"><p>{title}</p><span>{conversation.kind === "group" ? `${conversation.member_count} members` : presence[peerId]?.online ? "Online" : presence[peerId] ? "Offline" : ""}</span></div>
           <span className={`connection-pill${isConnected ? ' connected' : ''}`}><i />{isConnected ? "Connected" : "Reconnecting"}</span>
-          <details className="chat-actions-menu"><summary aria-label="Conversation actions">•••</summary><div className="chat-header-actions">
+          <details className="chat-actions-menu"><summary className="icon-button" aria-label="Conversation actions"><Icon name="more" /></summary><div className="chat-header-actions">
             {conversation.kind === "group" && <Link to={`/conversations/${conversationId}/settings`} className="soft-button px-3 py-2 text-xs">Group details</Link>}
             <button onClick={() => void mutate({ pinned: !conversation.pinned })} className="soft-button px-3 py-2 text-xs">{conversation.pinned ? "Unpin" : "Pin"}</button>
             <button onClick={() => void mutate({ archived: !conversation.archived })} className="soft-button px-3 py-2 text-xs">{conversation.archived ? "Unarchive" : "Archive"}</button>
             <button onClick={() => void mutate({ mute_minutes: conversation.muted ? 0 : 1440 })} className="soft-button px-3 py-2 text-xs">{conversation.muted ? "Unmute" : "Mute"}</button>
-            <button onClick={() => void hideCurrent()} className="soft-button px-3 py-2 text-xs text-red-300">Hide</button>
+            <button onClick={() => void hideCurrent()} className="soft-button px-3 py-2 text-xs text-danger">Hide</button>
           </div></details>
         </div>
       </header>
       {error && (
-        <div className="mx-auto w-full max-w-5xl px-4 pt-4 text-sm text-red-300 sm:px-6">
+        <div className="mx-auto w-full max-w-5xl px-4 pt-4 text-sm text-danger sm:px-6">
           {error}
         </div>
       )}
-      <main className="chat-pattern scrollbar-thin flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-        <div className="mx-auto flex max-w-3xl flex-col space-y-4">
+      <main ref={historyRef} className="chat-pattern message-history scrollbar-thin flex-1 overflow-y-auto" onScroll={(event) => {
+        const history = event.currentTarget;
+        const nearBottom = history.scrollHeight - history.scrollTop - history.clientHeight < 100;
+        followLatest.current = nearBottom;
+        setShowJump(!nearBottom);
+      }}>
+        <div className="message-stack">
           {hasMore && (
             <button
               onClick={() => void load(true)}
               disabled={loadingOlder}
-              className="self-center rounded-full bg-[#1c3049] px-4 py-2 text-sm text-blue-300"
+              className="self-center rounded-full bg-raised px-4 py-2 text-sm text-accent"
             >
               {loadingOlder ? "Loading..." : "Load older messages"}
             </button>
           )}
           {messages.length === 0 ? (
-            <div className="py-16 text-center text-slate-400">
-              <p className="font-medium text-slate-200">No messages yet</p>
+            <div className="py-16 text-center text-secondary">
+              <p className="font-medium text-primary">No messages yet</p>
               <p className="mt-1 text-sm">Start the conversation below.</p>
             </div>
           ) : (
-            messages.map((message) => (
+            messages.map((message, index) => (
+              <Fragment key={message.id}>
+              {(index === 0 || new Date(messages[index - 1].created_at).toDateString() !== new Date(message.created_at).toDateString()) && <div className="date-separator">{new Date(message.created_at).toDateString() === new Date().toDateString() ? 'Today' : new Date(message.created_at).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}</div>}
               <div
-                key={message.id}
-                className={`flex ${message.sender_id === user?.id ? "justify-end" : "justify-start"}`}
+                className={`message-row${index > 0 && messages[index - 1].sender_id === message.sender_id && new Date(messages[index - 1].created_at).toDateString() === new Date(message.created_at).toDateString() ? ' continuation' : ''} ${message.sender_id === user?.id ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] px-4 py-3 shadow-lg shadow-black/10 md:max-w-md ${message.sender_id === user?.id ? "message-out" : "message-in"}`}
+                  className={`${message.sender_id === user?.id ? "message-out" : "message-in"}`}
                 >
                   {conversation.kind === "group" &&
                     message.sender_id !== user?.id && (
-                      <p className="mb-1 text-xs font-semibold text-blue-300">
+                      <p className="mb-1 text-xs font-semibold text-accent">
                         {memberNames[message.sender_id] ?? "Member"}
                       </p>
                     )}
@@ -947,9 +981,9 @@ export default function ChatPage() {
                         : ""}
                     </p>
                   )}
-                  <div className="break-words text-[15px] leading-6">
+                  <div className="message-body">
                     {message.reply_to_message_id && (
-                      <div className="mb-2 border-l-2 border-blue-400 pl-2 text-xs opacity-75">
+                      <div className="mb-2 border-l-2 border-accent pl-2 text-xs opacity-75">
                         <span className="font-semibold">
                           {message.reply_to
                             ? (memberNames[message.reply_to.sender_id] ??
@@ -973,21 +1007,20 @@ export default function ChatPage() {
                           aria-label={`${item.reaction}, ${item.count} reactions`}
                           aria-pressed={item.reacted_by_me}
                           onClick={() => void react(message, item.reaction)}
-                          className={`rounded-full px-2 py-1 text-xs ${item.reacted_by_me ? "bg-blue-500/40" : "bg-slate-900/30"}`}
+                          className={`rounded-full px-2 py-1 text-xs ${item.reacted_by_me ? "bg-accent-soft" : "bg-raised"}`}
                         >
                           {item.reaction} {item.count}
                         </button>
                       ))}
                     </div>
                   )}
-                  <div className="mt-1 text-right text-[11px] opacity-65">
+                  <div className="message-meta">
                     {new Date(message.created_at).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}{" "}
-                    {message.sender_id === user?.id &&
-                      `· ${message.status ?? "sent"}`}
-                    {message.edited_at && " · edited"}
+                    {message.sender_id === user?.id && <MessageReceipt status={message.status} />}
+                    {message.edited_at && <span className="message-edited">edited</span>}
                     {message.status === "failed" && (
                       <button
                         onClick={() => retry(message)}
@@ -997,20 +1030,20 @@ export default function ChatPage() {
                       </button>
                     )}
                   </div>
-                  <details className="relative mt-2 text-right text-xs">
+                  <details className="message-actions text-xs">
                     <summary
-                      className="cursor-pointer list-none rounded px-2 py-1 hover:bg-white/10"
+                      className="icon-button"
                       aria-label="Message actions"
                     >
-                      •••
+                      <Icon name="more" width={18} height={18} />
                     </summary>
-                    <div className="absolute right-0 z-10 mt-1 min-w-48 rounded-xl border border-[#35506f] bg-[#13243a] p-2 text-left shadow-xl">
-                      <div className="mb-2 flex gap-1 border-b border-[#35506f] pb-2">
+                    <div className="absolute right-0 z-10 mt-1 min-w-48 rounded-xl border border-theme bg-raised p-2 text-left shadow-xl">
+                      <div className="mb-2 flex gap-1 border-b border-theme pb-2">
                         {QUICK_REACTIONS.map((emoji) => (
                           <button
                             key={emoji}
                             onClick={() => void react(message, emoji)}
-                            className="rounded p-1 text-base hover:bg-white/10"
+                            className="rounded p-1 text-base hover-surface"
                             aria-label={`React ${emoji}`}
                           >
                             {emoji}
@@ -1021,22 +1054,22 @@ export default function ChatPage() {
                         onClick={() => {
                           setReplyTo(message);
                           document
-                            .querySelector<HTMLInputElement>("#message-input")
+                            .querySelector<HTMLTextAreaElement>("#message-input")
                             ?.focus();
                         }}
-                        className="block w-full rounded px-3 py-2 text-left hover:bg-white/10"
+                        className="block w-full rounded px-3 py-2 text-left hover-surface"
                       >
                         Reply
                       </button>
                       <button
                         onClick={() => void copy(message)}
-                        className="block w-full rounded px-3 py-2 text-left hover:bg-white/10"
+                        className="block w-full rounded px-3 py-2 text-left hover-surface"
                       >
                         Copy
                       </button>
                       <button
                         onClick={() => void openForward(message)}
-                        className="block w-full rounded px-3 py-2 text-left hover:bg-white/10"
+                        className="block w-full rounded px-3 py-2 text-left hover-surface"
                       >
                         Forward
                       </button>
@@ -1044,13 +1077,13 @@ export default function ChatPage() {
                         <>
                           <button
                             onClick={() => edit(message)}
-                            className="block w-full rounded px-3 py-2 text-left hover:bg-white/10"
+                            className="block w-full rounded px-3 py-2 text-left hover-surface"
                           >
                             Edit
                           </button>
                           <button
                             onClick={() => remove(message)}
-                            className="block w-full rounded px-3 py-2 text-left text-red-300 hover:bg-white/10"
+                            className="block w-full rounded px-3 py-2 text-left text-danger hover-surface"
                           >
                             Delete
                           </button>
@@ -1060,10 +1093,11 @@ export default function ChatPage() {
                   </details>
                 </div>
               </div>
+              </Fragment>
             ))
           )}
           {activeTypers.length > 0 && (
-            <div className="text-sm italic text-slate-400">
+            <div className="text-sm italic text-secondary">
               {activeTypers.slice(0, 2).join(", ")}{" "}
               {activeTypers.length === 1 ? "is" : "are"} typing...
             </div>
@@ -1078,7 +1112,7 @@ export default function ChatPage() {
           aria-label="Forward message"
           className="fixed inset-0 z-30 flex items-end justify-center bg-black/60 p-4 sm:items-center"
         >
-          <div ref={forwardDialogRef} className="w-full max-w-md rounded-2xl border border-[#35506f] bg-[#111d2d] p-4">
+          <div ref={forwardDialogRef} className="w-full max-w-md rounded-2xl border border-theme bg-raised p-4">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Forward to</h2>
               <button
@@ -1100,7 +1134,7 @@ export default function ChatPage() {
                 </button>
               ))}
               {destinations.length === 0 && (
-                <p className="py-6 text-center text-sm text-slate-400">
+                <p className="py-6 text-center text-sm text-secondary">
                   No other conversations available.
                 </p>
               )}
@@ -1108,9 +1142,10 @@ export default function ChatPage() {
           </div>
         </div>
       )}
-      <div className="relative shrink-0 border-t border-[#25364d] bg-[#111d2d] p-4">
+      {showJump && <button className="jump-to-latest" onClick={() => { followLatest.current = true; if (historyRef.current) historyRef.current.scrollTop = historyRef.current.scrollHeight; setShowJump(false); }}>Latest messages ↓</button>}
+      <div className="chat-composer relative">
         {mentionSuggestions.length > 0 && (
-          <div id="mention-suggestions" role="listbox" aria-label="Mention suggestions" className="absolute bottom-full left-1/2 w-full max-w-3xl -translate-x-1/2 rounded-t-xl border border-[#35506f] bg-[#111d2d] p-2 shadow-xl">
+          <div id="mention-suggestions" role="listbox" aria-label="Mention suggestions" className="absolute bottom-full left-1/2 w-full max-w-3xl -translate-x-1/2 rounded-t-xl border border-theme bg-raised p-2 shadow-xl">
             {mentionSuggestions.map((suggestion, index) => (
               <button
                 type="button"
@@ -1120,7 +1155,7 @@ export default function ChatPage() {
                 aria-selected={index === activeMention}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => chooseMention(suggestion)}
-                className={`block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-blue-500/20 ${index === activeMention ? "bg-blue-500/20" : ""}`}
+                className={`block w-full rounded-lg px-3 py-2 text-left text-sm hover-surface ${index === activeMention ? "bg-accent-soft" : ""}`}
               >
                 {suggestion.label}
               </button>
@@ -1128,7 +1163,7 @@ export default function ChatPage() {
           </div>
         )}
         {replyTo && (
-          <div className="mx-auto mb-2 flex max-w-3xl items-center justify-between gap-4 border-l-2 border-blue-400 pl-3 text-xs text-slate-300">
+          <div className="composer-reply">
             <span className="min-w-0">
               <strong className="block">
                 Replying to{" "}
@@ -1145,36 +1180,12 @@ export default function ChatPage() {
             </button>
           </div>
         )}
-        <form onSubmit={submit} className="mx-auto flex max-w-3xl gap-2">
-          <input
-            id="message-input"
-            value={input}
-            onChange={(event) => changeInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (!mentionSuggestions.length) return;
-              if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setActiveMention((current) => (current + (event.key === "ArrowDown" ? 1 : -1) + mentionSuggestions.length) % mentionSuggestions.length); }
-              else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); chooseMention(mentionSuggestions[activeMention]); }
-              else if (event.key === "Escape") { event.preventDefault(); setInput((value) => value.replace(/@\w*$/, "")); }
-            }}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={mentionSuggestions.length > 0}
-            aria-controls="mention-suggestions"
-            aria-activedescendant={mentionSuggestions.length ? `mention-option-${activeMention}` : undefined}
-            onBlur={stopTyping}
-            className="app-input min-w-0 flex-1 px-4 py-3"
-            placeholder={
-              isConnected ? "Write a message..." : "Reconnect to send"
-            }
-            disabled={!isConnected}
-          />
-          <button
-            disabled={!isConnected || !input.trim()}
-            className="primary-button px-5 py-3 text-sm font-semibold disabled:opacity-50"
-          >
-            Send
-          </button>
-        </form>
+        <MessageComposer value={input} disabled={!isConnected} onChange={changeInput} onBlur={stopTyping} mentionCount={mentionSuggestions.length} activeMention={activeMention} onSubmit={(event) => { followLatest.current = true; setShowJump(false); submit(event); }} onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || !mentionSuggestions.length) return;
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setActiveMention((current) => (current + (event.key === "ArrowDown" ? 1 : -1) + mentionSuggestions.length) % mentionSuggestions.length); }
+          else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); chooseMention(mentionSuggestions[activeMention]); }
+          else if (event.key === "Escape") { event.preventDefault(); setInput((value) => value.replace(/@\w*$/, "")); }
+        }} />
       </div>
       </div>
     </div>

@@ -131,6 +131,16 @@ The REST wrapper returns `{"status":"ok","data":...}` for data responses,
 The frontend REST base URL is currently hard-coded to
 `http://localhost:8002/api/v1` in `web/src/api/client.ts`.
 
+The signed-in interface uses a persistent desktop workspace with shared conversation
+list state (`ConversationContext`), a rail, a contact picker, and a conversation
+pane. Chats is the default signed-in destination; deep links remain supported.
+Below 900px, navigation displays one primary pane at a time. `ThemeContext` owns
+light/dark selection (light by default, persisted locally); semantic CSS tokens
+apply to account screens too. Preview content comes from loaded histories and
+live events, with metadata fallback when no preview is available. The multiline
+composer sends on Enter, inserts a newline on Shift+Enter, and gives mention
+selection priority. Shared confirmation/edit dialogs restore keyboard focus.
+
 ## 6. Database structure
 
 The fresh-install schema starts with

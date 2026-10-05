@@ -16,5 +16,5 @@ export function mentionSegments(content: string, mentions: MessageMention[]) {
 }
 
 export default function MentionText({ content, mentions = [] }: { content: string; mentions?: MessageMention[] }) {
-  return <>{mentionSegments(content, mentions).map((segment, index) => segment.mention ? <mark key={index} className="rounded bg-blue-400/25 px-0.5 text-blue-100">{segment.text}</mark> : <span key={index}>{segment.text}</span>)}</>;
+  return <>{mentionSegments(content, mentions).map((segment, index) => segment.mention ? <mark key={index} className="rounded bg-accent-soft px-0.5 text-accent">{segment.text}</mark> : <span key={index}>{segment.text}</span>)}</>;
 }

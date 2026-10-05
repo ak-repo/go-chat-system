@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import LoginPage from './pages/LoginPage';
@@ -16,9 +16,12 @@ import DirectChatResolver from './pages/DirectChatResolver';
 import NotificationsPage from './pages/NotificationsPage';
 import InviteAcceptancePage from './pages/InviteAcceptancePage';
 import AppShell from './components/AppShell';
+import { ConversationProvider } from './context/ConversationContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { DialogProvider } from './context/DialogContext';
 
 // Protected route wrapper
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
@@ -34,7 +37,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} />;
   }
 
-  return <AppShell>{children}</AppShell>;
+  return <ConversationProvider><AppShell><Outlet /></AppShell></ConversationProvider>;
 }
 
 // Public route wrapper (redirect if already logged in)
@@ -52,7 +55,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
   if (isAuthenticated) {
     const from = (location.state as { from?: unknown } | null)?.from;
-    return <Navigate to={typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/friends'} replace />;
+    return <Navigate to={typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/conversations'} replace />;
   }
 
   return <>{children}</>;
@@ -69,7 +72,7 @@ function RootRedirect() {
     );
   }
 
-  return <Navigate to={isAuthenticated ? '/friends' : '/login'} replace />;
+  return <Navigate to={isAuthenticated ? '/conversations' : '/login'} replace />;
 }
 
 function AppRoutes() {
@@ -93,30 +96,18 @@ function AppRoutes() {
       />
       <Route path="/recover" element={<PublicRoute><RecoveryPage /></PublicRoute>} />
       <Route path="/verify" element={<VerificationPage />} />
-      <Route
-        path="/friends"
-        element={
-          <ProtectedRoute>
-            <FriendsPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/chat/:userId"
-        element={
-          <ProtectedRoute>
-            <DirectChatResolver />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-      <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
-      <Route path="/conversations/new-group" element={<ProtectedRoute><CreateGroupPage /></ProtectedRoute>} />
-      <Route path="/conversations/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-      <Route path="/conversations/:conversationId/settings" element={<ProtectedRoute><GroupSettingsPage /></ProtectedRoute>} />
-      <Route path="/users/:userId" element={<ProtectedRoute><PublicProfilePage /></ProtectedRoute>} />
-      <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
-      <Route path="/invites/:token" element={<ProtectedRoute><InviteAcceptancePage /></ProtectedRoute>} />
+      <Route element={<ProtectedRoute />}>
+        <Route path="/friends" element={<FriendsPage />} />
+        <Route path="/chat/:userId" element={<DirectChatResolver />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/conversations" element={<ConversationsPage />} />
+        <Route path="/conversations/new-group" element={<CreateGroupPage />} />
+        <Route path="/conversations/:conversationId" element={<ChatPage />} />
+        <Route path="/conversations/:conversationId/settings" element={<GroupSettingsPage />} />
+        <Route path="/users/:userId" element={<PublicProfilePage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/invites/:token" element={<InviteAcceptancePage />} />
+      </Route>
       <Route path="/" element={<RootRedirect />} />
       <Route path="*" element={<RootRedirect />} />
     </Routes>
@@ -125,13 +116,13 @@ function AppRoutes() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <ThemeProvider><DialogProvider><BrowserRouter>
       <AuthProvider>
         <SocketProvider>
           <AppRoutes />
         </SocketProvider>
       </AuthProvider>
-    </BrowserRouter>
+    </BrowserRouter></DialogProvider></ThemeProvider>
   );
 }
 

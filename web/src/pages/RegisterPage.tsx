@@ -30,21 +30,22 @@ export default function RegisterPage() {
   return (
     <div className="app-shell flex min-h-screen items-center justify-center p-4">
       <div className="app-card w-full max-w-md p-7 sm:p-9">
-        <div className="mb-8 text-center"><div className="avatar mx-auto mb-4 h-14 w-14 text-xl">C</div><p className="text-sm font-medium uppercase tracking-[0.2em] text-blue-400">Join the conversation</p><h1 className="mt-2 text-2xl font-bold text-white">Create account</h1></div>
+        <div className="mb-8 text-center"><div className="avatar mx-auto mb-4 h-14 w-14 text-xl">C</div><p className="text-sm font-medium uppercase tracking-[0.2em] text-accent">Join the conversation</p><h1 className="mt-2 text-2xl font-bold text-primary">Create account</h1></div>
 
         {error && (
-          <div className="mb-4 rounded-xl border border-red-900/60 bg-red-950/40 p-3 text-red-300">
+          <div className="mb-4 rounded-xl border border-danger bg-danger-soft p-3 text-danger">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-300">
+            <label className="block text-sm font-medium text-secondary">
               Username
             </label>
             <input
               type="text"
+              aria-label="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
@@ -53,11 +54,12 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300">
+            <label className="block text-sm font-medium text-secondary">
               Email
             </label>
             <input
               type="email"
+              aria-label="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -66,11 +68,12 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300">
+            <label className="block text-sm font-medium text-secondary">
               Password
             </label>
             <input
               type="password"
+              aria-label="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -88,9 +91,9 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-400">
+        <p className="mt-6 text-center text-sm text-secondary">
           Already have an account?{' '}
-          <Link to="/login" state={location.state} className="font-semibold text-blue-400 hover:text-blue-300">
+          <Link to="/login" state={location.state} className="font-semibold text-accent hover-accent">
             Login
           </Link>
         </p>
