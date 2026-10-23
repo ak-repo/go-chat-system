@@ -56,3 +56,13 @@ email:
   password: ""
   from: ""
   app_url: http://localhost:5173
+
+# Private image storage. Use S3_ACCESS_KEY/S3_SECRET_KEY in the environment.
+media:
+  enabled: false
+  endpoint: http://localhost:9000 # empty for AWS S3
+  region: us-east-1
+  bucket: chat-media
+  path_style: true # false for AWS S3
+  access_key: ""
+  secret_key: ""

@@ -7,6 +7,9 @@ import (
 
 // DAO
 type Message struct {
+	MessageType            string              `json:"message_type"`
+	Attachments            []Attachment        `json:"attachments"`
+	AttachmentIDs          []string            `json:"-"`
 	ID                     string              `json:"id" db:"id"`
 	SenderID               string              `json:"sender_id" db:"sender_id"`
 	ReceiverID             string              `json:"receiver_id" db:"receiver_id"`

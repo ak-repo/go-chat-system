@@ -36,7 +36,49 @@ services:
       timeout: 5s
       retries: 5
 
+  # Optional private image storage: docker compose --profile media up -d
+  minio:
+    image: go-chat-minio:2025-10-15
+    build:
+      context: deploy/minio
+      target: server
+    profiles: [media]
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chat-media-dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-local-media-password}
+      MINIO_API_CORS_ALLOW_ORIGIN: ${MEDIA_CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - media_data:/data
+  minio-init:
+    image: go-chat-mc:2025-08-13
+    build:
+      context: deploy/minio
+      target: client
+    profiles: [media]
+    depends_on: [minio]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-chat-media-dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-local-media-password}
+    entrypoint: /bin/sh
+    command:
+      - -ec
+      - |
+        for attempt in $$(seq 1 30); do
+          if mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; then
+            mc mb --ignore-existing local/chat-media
+            mc anonymous set none local/chat-media
+            exit 0
+          fi
+          sleep 1
+        done
+        exit 1
+
 # Volumes
 volumes:
   pgdata:
   redis_data:
+  media_data:

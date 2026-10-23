@@ -9,7 +9,17 @@ import (
 	"github.com/spf13/viper"
 )
 
+type MediaConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	Endpoint  string `mapstructure:"endpoint"`
+	Region    string `mapstructure:"region"`
+	Bucket    string `mapstructure:"bucket"`
+	AccessKey string `mapstructure:"access_key"`
+	SecretKey string `mapstructure:"secret_key"`
+	PathStyle bool   `mapstructure:"path_style"`
+}
 type AppConfig struct {
+	Media    MediaConfig       `mapstructure:"media"`
 	App      ApplicationConfig `mapstructure:"app"`
 	Database DatabaseConfig    `mapstructure:"database"`
 	JWT      JWTConfig         `mapstructure:"jwt"`
@@ -104,6 +114,9 @@ func Load() error {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	if Config.Media.Enabled && (Config.Media.Bucket == "" || Config.Media.Region == "" || (Config.Media.AccessKey == "") != (Config.Media.SecretKey == "")) {
+		return fmt.Errorf("media requires bucket, region and paired credentials (or AWS default credentials)")
+	}
 	// Validate required fields - if empty after unmarshal, use values from YAML directly
 	if Config.Database.Host == "" {
 		Config.Database.Host = viper.GetString("database.host")
@@ -140,6 +153,11 @@ func Load() error {
 }
 
 func overrideFromEnv() {
+	for env, key := range map[string]string{"MEDIA_ENABLED": "media.enabled", "S3_ENDPOINT": "media.endpoint", "S3_REGION": "media.region", "S3_BUCKET": "media.bucket", "S3_ACCESS_KEY": "media.access_key", "S3_SECRET_KEY": "media.secret_key", "S3_PATH_STYLE": "media.path_style"} {
+		if v := os.Getenv(env); v != "" {
+			viper.Set(key, v)
+		}
+	}
 	// Only override if env var is explicitly set (non-empty)
 	if v := os.Getenv("DB_HOST"); v != "" {
 		viper.Set("database.host", v)
