@@ -53,8 +53,8 @@ Vite application and is not embedded in the Go binary.
 
 ### Local infrastructure
 
-`docker-compose.yml` defines PostgreSQL 16 and Redis 7 only. It does not build
-or run the application or frontend.
+`docker-compose.yml` defines PostgreSQL 16, Redis 7, and optional private MinIO
+storage under the `media` profile. It does not run the application or frontend.
 
 ## 3. Repository structure
 
@@ -445,3 +445,39 @@ production Dockerfile for the application or frontend.
   `TEST_DATABASE_URL`.
 
 For deployment-specific commands and checklist, see `docs/DEPLOYMENT.md`.
+
+## Phase 3: image messages
+
+The image milestone supports one JPEG/PNG/WebP attachment per message with an
+optional caption, image replies, caption edits, shared-media forwarding, history
+hydration, and image previews. Other media types remain deferred. Configuration
+and operating instructions are in [DEPLOYMENT.md](DEPLOYMENT.md).
+
+Authenticated endpoints under `/api/v1`:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/media/capabilities` | Image availability, MIME types and limits |
+| POST | `/conversations/{conversationID}/attachments` | Create private presigned POST upload |
+| POST | `/attachments/{attachmentID}/complete` | Queue uploaded image for validation |
+| GET | `/attachments/{attachmentID}` | Owner-only processing status |
+| DELETE | `/attachments/{attachmentID}` | Cancel an unlinked attachment |
+| GET | `/messages/{messageID}/attachments/{attachmentID}/url` | Authorize a full/thumbnail URL; optional download disposition |
+
+Message HTTP and WebSocket send/reply payloads accept `attachment_ids`; persisted
+messages and realtime events include `message_type` and validated `attachments`.
+Image bytes travel directly to storage, never over WebSockets. Sender identity
+comes from authentication. The new Goose migration is
+`20261021120000_image_attachments.sql`.
+
+Image business logic and worker orchestration live in `internal/service`;
+repositories own transactional links, worker leases and cleanup locks; the
+platform storage adapter owns S3 operations. Publication checks the processing
+attempt under a row lock before writing objects and marking readiness. Cancel and
+cleanup acquire the same lock, stale attempts cannot publish, and failed writes
+retain their keys for retry/cleanup. Live forwards preserve shared media.
+
+The frontend queries media capabilities, uploads without API authorization headers,
+polls processing status, clears drafts on navigation, and retains attachment IDs
+for failed-send retry. Images load lazily, support a modal viewer/download, and
+bound automatic URL renewal. Uploads default to disabled.

@@ -114,29 +114,32 @@
 
 ## Phase 3 — Media & Files
 
+Image milestone implemented; checked storage, validation and processing items
+currently apply to images. Video, audio, voice and document uploads remain deferred.
+
 ### File Handling
-- [ ] Image messages
+- [x] Image messages
 - [ ] Video messages
 - [ ] Audio messages
 - [ ] Voice messages
 - [ ] Document/file messages
-- [ ] File size validation
-- [ ] MIME type validation
-- [ ] Secure file downloads
+- [x] File size validation
+- [x] MIME type validation
+- [x] Secure file downloads
 
 ### Object Storage
-- [ ] S3/MinIO integration
-- [ ] Upload service
-- [ ] Presigned upload URLs
-- [ ] Presigned download URLs
-- [ ] File deletion
+- [x] S3/MinIO integration
+- [x] Upload service
+- [x] Presigned upload URLs
+- [x] Presigned download URLs
+- [x] File deletion
 
 ### Media Processing
-- [ ] Image compression
-- [ ] Image thumbnails
+- [x] Image compression
+- [x] Image thumbnails
 - [ ] Video thumbnails
-- [ ] Media metadata
-- [ ] Upload progress
+- [x] Media metadata
+- [x] Upload progress
 
 ---
 
