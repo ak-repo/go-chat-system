@@ -1,3 +1,7 @@
+import ImageMessage from "../components/ImageMessage";
+import { useImageUpload } from "../hooks/useImageUpload";
+import { mediaCapabilities, type Attachment } from "../api/attachments";
+import { messagePreview } from "../api/messages";
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import {
   useCallback,
@@ -84,6 +88,15 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [typingUsers, setTypingUsers] = useState<TypingByConversation>({});
+  const imageUpload = useImageUpload(conversationId ?? "");
+  const [imagesEnabled, setImagesEnabled] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void mediaCapabilities(controller.signal).then((capabilities) => {
+      if (!controller.signal.aborted) setImagesEnabled(capabilities.images_enabled);
+    }).catch(() => { if (!controller.signal.aborted) setImagesEnabled(false); });
+    return () => controller.abort();
+  }, []);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [forwarding, setForwarding] = useState<Message | null>(null);
   const [destinations, setDestinations] = useState<Conversation[]>([]);
@@ -314,6 +327,7 @@ export default function ChatPage() {
           sender_id: event.sender_id ?? "",
           receiver_id: event.receiver_id ?? "",
           content: data.content,
+          message_type: data.message_type, attachments: data.attachments,
           is_group: event.receiver_type === "group",
           created_at: data.timestamp,
           modified_at: data.timestamp,
@@ -397,7 +411,7 @@ export default function ChatPage() {
       };
       if (
         data.message_id &&
-        data.content &&
+        data.content !== undefined &&
         data.conversation_id === conversationId
       )
         setMessages((current) =>
@@ -429,6 +443,7 @@ export default function ChatPage() {
         server_id?: string;
         client_message_id?: string;
         content?: string;
+        attachments?: Attachment[]; message_type?: "text" | "image";
         conversation_id?: string;
         mentions?: MessageMention[];
       };
@@ -436,7 +451,7 @@ export default function ChatPage() {
         data.conversation_id !== conversationId ||
         !data.server_id ||
         !data.message_id ||
-        !data.content
+        (data.content === undefined && !data.attachments?.length)
       )
         return;
       setMessages((current) =>
@@ -445,7 +460,8 @@ export default function ChatPage() {
           client_message_id: data.client_message_id,
           sender_id: event.sender_id ?? "",
           receiver_id: event.receiver_id ?? "",
-          content: data.content!,
+          content: data.content ?? "",
+          attachments: data.attachments, message_type: data.message_type,
           mentions: data.mentions,
           conversation_id: conversationId,
           reply_to_message_id: data.message_id,
@@ -620,12 +636,14 @@ export default function ChatPage() {
     messageId?: string,
     clientMessageId?: string,
     mentions?: MessageMention[],
+    attachmentIds?: string[],
   ) =>
     sendConversationEvent(event, conversationId, receiverType, receiverId, {
       content,
       message_id: messageId,
       client_message_id: clientMessageId,
       mentions,
+      attachment_ids: attachmentIds,
     });
   const stopTyping = () => {
     if (typingTimer.current) clearTimeout(typingTimer.current);
@@ -663,11 +681,12 @@ export default function ChatPage() {
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!input.trim()) return;
+    if (imageUpload.draft ? imageUpload.draft.phase !== "ready" : !input.trim()) return;
     const content = input.trim();
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const reply = replyTo;
+    const attachment = imageUpload.draft?.attachment;
     const mentions = selectedMentions
       .flatMap((selected) => {
         const utf16Offset = content.indexOf(selected.label);
@@ -690,11 +709,12 @@ export default function ChatPage() {
         sender_id: user?.id ?? "",
         receiver_id: receiverId,
         content,
+        message_type: attachment ? "image" : "text", attachments: attachment ? [attachment] : [],
         is_group: conversation.kind === "group",
         conversation_id: conversationId,
         reply_to_message_id: reply?.id,
         reply_to: reply
-          ? { id: reply.id, sender_id: reply.sender_id, content: reply.content }
+          ? { id: reply.id, sender_id: reply.sender_id, content: messagePreview(reply) }
           : undefined,
         created_at: now,
         modified_at: now,
@@ -710,6 +730,7 @@ export default function ChatPage() {
         reply?.id,
         id,
         mentions,
+        attachment ? [attachment.id] : undefined,
       )
     )
       setMessages((current) =>
@@ -719,6 +740,7 @@ export default function ChatPage() {
             : message,
         ),
       );
+    imageUpload.consume();
     setInput("");
     setReplyTo(null);
     setSelectedMentions([]);
@@ -740,6 +762,7 @@ export default function ChatPage() {
         message.reply_to_message_id,
         message.client_message_id,
         message.mentions,
+        message.attachments?.map((attachment) => attachment.id),
       )
     )
       setMessages((current) =>
@@ -768,7 +791,7 @@ export default function ChatPage() {
   const edit = async (message: Message) => {
     const content = (await askText("Edit message", message.content))?.trim();
     if (
-      content &&
+      content !== undefined && (content !== "" || message.message_type === "image") &&
       sendConversationEvent(
         "message.edited",
         conversationId,
@@ -997,6 +1020,7 @@ export default function ChatPage() {
                         </span>
                       </div>
                     )}
+                    {message.attachments?.map((attachment) => <ImageMessage key={attachment.id} messageId={message.id} attachment={attachment} />)}
                     <MentionText content={message.content} mentions={message.mentions} />
                   </div>
                   {(message.reactions?.length ?? 0) > 0 && (
@@ -1172,7 +1196,7 @@ export default function ChatPage() {
                   : (memberNames[replyTo.sender_id] ?? "a member")}
               </strong>
               <span className="block truncate">
-                {replyTo.content || "Message unavailable"}
+                {messagePreview(replyTo) || "Message unavailable"}
               </span>
             </span>
             <button onClick={() => setReplyTo(null)} className="underline">
@@ -1180,7 +1204,7 @@ export default function ChatPage() {
             </button>
           </div>
         )}
-        <MessageComposer value={input} disabled={!isConnected} onChange={changeInput} onBlur={stopTyping} mentionCount={mentionSuggestions.length} activeMention={activeMention} onSubmit={(event) => { followLatest.current = true; setShowJump(false); submit(event); }} onKeyDown={(event) => {
+        <MessageComposer image={imageUpload.draft} onImage={imagesEnabled ? (file) => void imageUpload.select(file) : undefined} onCancelImage={imageUpload.cancel} onRetryImage={imageUpload.retry} value={input} disabled={!isConnected} onChange={changeInput} onBlur={stopTyping} mentionCount={mentionSuggestions.length} activeMention={activeMention} onSubmit={(event) => { followLatest.current = true; setShowJump(false); submit(event); }} onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || !mentionSuggestions.length) return;
           if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setActiveMention((current) => (current + (event.key === "ArrowDown" ? 1 : -1) + mentionSuggestions.length) % mentionSuggestions.length); }
           else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); chooseMention(mentionSuggestions[activeMention]); }

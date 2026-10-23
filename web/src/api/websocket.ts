@@ -2,7 +2,7 @@ import { BASE_URL, getToken, refreshAccessToken } from './client';
 
 export type WSEventType = 'message' | 'message.edited' | 'message.deleted' | 'message.replied' | 'message.reaction.added' | 'message.reaction.removed' | 'message.delivered' | 'message.read' | 'typing' | 'typing.started' | 'typing.stopped' | 'read' | 'user_online' | 'user_offline' | 'presence.snapshot' | 'notification.created' | 'notification.read' | 'ack' | 'error';
 export interface WSMessage<T = unknown> { event: WSEventType; sender_id?: string; receiver_id?: string; receiver_type?: 'user' | 'group'; data: T }
-export interface ChatMessage { message_id: string; client_message_id?: string; content: string; timestamp: string; conversation_id?: string; mentions?: import('./messages').MessageMention[] }
+export interface ChatMessage { message_type?: "text" | "image"; attachments?: import("./attachments").Attachment[]; message_id: string; client_message_id?: string; content: string; timestamp: string; conversation_id?: string; mentions?: import('./messages').MessageMention[] }
 export interface TypingData { state: boolean; conversation_id?: string; timestamp?: string }
 export interface ReadData { message_id: string; read_at?: string; conversation_id?: string }
 export interface AckData { server_id?: string; message_id?: string; client_message_id?: string; conversation_id?: string; status: 'sent' | 'delivered' | 'read' | 'failed'; event?: string }

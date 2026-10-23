@@ -1,3 +1,4 @@
+import { messagePreview } from "../api/messages";
 /* eslint-disable react-refresh/only-export-components, react-hooks/set-state-in-effect */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { listConversations, type Conversation } from '../api/conversations';
@@ -61,7 +62,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const recordMessages = useCallback((id: string, messages: Message[]) => {
     const last = messages.at(-1);
     if (!last) return;
-    const preview = { id: last.id, content: last.deleted_at?.Valid ? 'Message deleted' : last.content, timestamp: last.created_at };
+    const preview = { id: last.id, content: last.deleted_at?.Valid ? 'Message deleted' : messagePreview(last), timestamp: last.created_at };
     setPreviews((current) => {
       const previous = current[id];
       if (previous && previous.timestamp && Date.parse(previous.timestamp) > Date.parse(preview.timestamp)) return current;
@@ -72,11 +73,11 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const receive = (message: { data: Partial<ChatMessage> & { server_id?: string } }) => {
       const data = message.data;
-      if (!data.conversation_id || !data.content || !(data.server_id || data.message_id)) return;
+      if (!data.conversation_id || (!data.content && !data.attachments?.length) || !(data.server_id || data.message_id)) return;
       setPreviews((current) => {
         const previous = current[data.conversation_id!];
         if (previous && previous.timestamp && data.timestamp && Date.parse(previous.timestamp) > Date.parse(data.timestamp)) return current;
-        return { ...current, [data.conversation_id!]: { id: (data.server_id || data.message_id)!, content: data.content!, timestamp: data.timestamp } };
+        return { ...current, [data.conversation_id!]: { id: (data.server_id || data.message_id)!, content: messagePreview({content: data.content ?? "",message_type:data.message_type,attachments:data.attachments}), timestamp: data.timestamp } };
       });
     };
     const off = [wsClient.on('message', (message) => receive(message as { data: ChatMessage })), wsClient.on('message.replied', (message) => receive(message as { data: ChatMessage })), wsClient.on('message.edited', (message) => {

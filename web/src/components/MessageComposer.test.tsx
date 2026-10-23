@@ -41,3 +41,19 @@ describe('MessageComposer', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 });
+it('allows a ready image without a caption and blocks processing images', () => {
+  const image = { file: new File(['image'], 'photo.png'), preview: 'blob:photo', progress: 100, phase: 'ready' as const };
+  const { input, onSubmit } = mount({ value: '', image });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(onSubmit).toHaveBeenCalledOnce();
+  cleanup();
+  mount({ value: '', image: { ...image, phase: 'processing' } });
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+});
+it('offers image selection only when media capabilities permit it', () => {
+  mount();
+  expect(screen.queryByLabelText('Attach image')).not.toBeInTheDocument();
+  cleanup();
+  mount({ onImage: vi.fn() });
+  expect(screen.getByLabelText('Attach image')).toBeInTheDocument();
+});

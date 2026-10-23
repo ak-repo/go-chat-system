@@ -1,3 +1,4 @@
+import type { Attachment } from "./attachments";
 import apiClient, { toApiResponse } from './client';
 import type { ApiResponse } from './client';
 
@@ -5,7 +6,7 @@ export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
 export interface MessagePreview { id: string; sender_id: string; content: string }
 export interface ReactionAggregate { reaction: string; count: number; reacted_by_me: boolean }
 export interface MessageMention { kind: 'user' | 'everyone'; user_id?: string; offset: number; length: number }
-export interface Message { id: string; sender_id: string; receiver_id: string; content: string; is_group: boolean; created_at: string; modified_at: string; deleted_at?: { Time: string; Valid: boolean } | null; conversation_id?: string; client_message_id?: string; edited_at?: string; reply_to_message_id?: string; reply_to?: MessagePreview; forwarded_from_message_id?: string; forwarded_from?: MessagePreview; reactions?: ReactionAggregate[]; mentions?: MessageMention[]; status?: MessageStatus }
+export interface Message { message_type?: "text" | "image"; attachments?: Attachment[]; id: string; sender_id: string; receiver_id: string; content: string; is_group: boolean; created_at: string; modified_at: string; deleted_at?: { Time: string; Valid: boolean } | null; conversation_id?: string; client_message_id?: string; edited_at?: string; reply_to_message_id?: string; reply_to?: MessagePreview; forwarded_from_message_id?: string; forwarded_from?: MessagePreview; reactions?: ReactionAggregate[]; mentions?: MessageMention[]; status?: MessageStatus }
 export interface MessagesResponse { messages: Message[]; limit: number; offset: number; conversation_id?: string }
 export type UnreadResponse = { unread: Record<string, number> };
 const statusRank: Record<MessageStatus, number> = { sending: 0, failed: 0, sent: 1, delivered: 2, read: 3 };
@@ -32,7 +33,7 @@ export function optimisticReaction(reactions: ReactionAggregate[] = [], reaction
 }
 export async function getMessages(otherUserId: string, limit = 50, offset = 0): Promise<ApiResponse<MessagesResponse>> { const r = await apiClient.get<ApiResponse<MessagesResponse>>('/messages', { params: { user_id: otherUserId, limit, offset } }); return toApiResponse(r.data); }
 export async function getConversationMessages(id: string, limit = 50, offset = 0): Promise<ApiResponse<MessagesResponse>> { const r = await apiClient.get<ApiResponse<MessagesResponse>>(`/conversations/${encodeURIComponent(id)}/messages`, { params: { limit, offset } }); return toApiResponse(r.data); }
-export interface SendMessageRequest { content: string; client_message_id?: string; reply_to_message_id?: string; mentions?: MessageMention[] }
+export interface SendMessageRequest { attachment_ids?: string[]; content: string; client_message_id?: string; reply_to_message_id?: string; mentions?: MessageMention[] }
 export async function sendMessage(id: string, data: SendMessageRequest): Promise<ApiResponse<Message>> { const r = await apiClient.post<ApiResponse<Message>>(`/conversations/${encodeURIComponent(id)}/messages`, data); return toApiResponse(r.data); }
 export async function forwardMessage(conversationId: string, messageId: string, clientMessageId: string): Promise<ApiResponse<Message>> { const r = await apiClient.post<ApiResponse<Message>>(`/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/forward`, { client_message_id: clientMessageId }); return toApiResponse(r.data); }
 export async function setMessageReaction(messageId: string, reaction: string, add: boolean): Promise<ApiResponse<{ message_id: string; reaction: string; reactions: ReactionAggregate[]; changed: boolean }>> { const path = `/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(reaction)}`; const r = add ? await apiClient.put(path) : await apiClient.delete(path); return toApiResponse(r.data); }
@@ -43,3 +44,5 @@ export async function markConversationRead(id: string, messageId: string): Promi
 export async function getUnread(): Promise<ApiResponse<UnreadResponse>> { const r = await apiClient.get<ApiResponse<UnreadResponse>>('/unread'); return toApiResponse(r.data); }
 export interface ReadAllResponse { status: string; receipts: { conversation_id: string; message_id: string; sender_id: string }[] }
 export async function markAllRead(): Promise<ApiResponse<ReadAllResponse>> { const r = await apiClient.post<ApiResponse<ReadAllResponse>>('/unread/read-all'); return toApiResponse(r.data); }
+
+export function messagePreview(message: Pick<Message,"content"|"message_type"|"attachments">):string{return message.content || (message.message_type === "image" || message.attachments?.length ? "Image" : "");}
