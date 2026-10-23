@@ -63,6 +63,9 @@ func logHandlerError(r *http.Request, statusCode int, err error) {
 }
 
 func getUserFriendlyMessage(err error) string {
+	if errors.Is(err, errs.ErrUnavailable) {
+		return "image storage unavailable"
+	}
 	if errors.Is(err, errs.ErrValidation) {
 		return "validation failed"
 	}

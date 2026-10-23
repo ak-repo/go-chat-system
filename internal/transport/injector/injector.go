@@ -1,6 +1,8 @@
 package injector
 
 import (
+	"context"
+	"github.com/ak-repo/go-chat-system/internal/platform/storage"
 	"strings"
 
 	"github.com/ak-repo/go-chat-system/internal/platform/config"
@@ -12,6 +14,7 @@ import (
 // Container holds all dependencies  want to share across  app.
 // This is "DI container" (manual injection).
 type Container struct {
+	AttachmentService *service.AttachmentService
 
 	// Repositories
 	UserRepo          repository.UserRepository
@@ -67,7 +70,17 @@ func Init() *Container {
 	accountTokenService := service.NewAccountTokenService(userRepo, delivery)
 	userService.SetVerificationSender(accountTokenService)
 
+	var objectStore storage.Store
+	if c := config.Config.Media; c.Enabled {
+		st, err := storage.New(context.Background(), storage.Config{Endpoint: c.Endpoint, Region: c.Region, Bucket: c.Bucket, AccessKey: c.AccessKey, SecretKey: c.SecretKey, PathStyle: c.PathStyle})
+		if err != nil {
+			panic("invalid media storage configuration")
+		}
+		objectStore = st
+	}
+	attachmentService := service.NewAttachmentService(repository.NewAttachmentRepository(db), objectStore, messageService)
 	return &Container{
+		AttachmentService:    attachmentService,
 		FriendRepo:           friendRepo,
 		FriendService:        friendService,
 		UserRepo:             userRepo,

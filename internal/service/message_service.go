@@ -41,11 +41,14 @@ type MessageHTTPService interface {
 type RealtimeEvent struct {
 	Event, ConversationID, MessageID, Content, ReceiverID, Status, Reaction, ClientMessageID string
 	Mentions                                                                                 []model.MessageMention
+	AttachmentIDs                                                                            []string
 }
 type RealtimeResult struct {
 	Event, ConversationID, MessageID, Content, ReceiverID, ServerID, Reaction, ClientMessageID string
 	Reactions                                                                                  []model.ReactionAggregate
 	Mentions                                                                                   []model.MessageMention
+	Attachments                                                                                []model.Attachment
+	MessageType                                                                                string
 }
 
 // HandleRealtime is the persistence boundary used by the WebSocket transport.
@@ -100,10 +103,15 @@ func (s *MessageServiceImpl) CreateConversationMessageWithMentions(ctx context.C
 	return s.createConversationMessage(ctx, actor, conversationID, body, clientID, replyID, "", mentions)
 }
 
-func (s *MessageServiceImpl) createConversationMessage(ctx context.Context, actor, conversationID, body, clientID, replyID, forwardedID string, mentions []model.MessageMention) (*model.Message, []string, error) {
+func (s *MessageServiceImpl) createConversationMessage(ctx context.Context, actor, conversationID, body, clientID, replyID, forwardedID string, mentions []model.MessageMention, attachmentIDs ...string) (*model.Message, []string, error) {
 	body = strings.TrimSpace(body)
-	if body == "" || len(body) > utils.MaxMessageLength {
+	if (body == "" && len(attachmentIDs) == 0) || len(body) > utils.MaxMessageLength || len(attachmentIDs) > 1 {
 		return nil, nil, errs.ErrValidation
+	}
+	for _, id := range attachmentIDs {
+		if uuid.Validate(id) != nil {
+			return nil, nil, errs.ErrValidation
+		}
 	}
 	if err := validateMentions(body, mentions); err != nil {
 		return nil, nil, err
@@ -152,6 +160,11 @@ func (s *MessageServiceImpl) createConversationMessage(ctx context.Context, acto
 	}
 	now := time.Now().UTC()
 	m := &model.Message{ID: uuid.NewString(), SenderID: actor, ReceiverID: receiver, Body: body, IsGroup: c.Kind == "group", ConversationID: conversationID, ClientMessageID: clientID, ReplyToMessageID: replyID, ForwardedFromMessageID: forwardedID, CreatedAt: now, ModifiedAt: now, Status: "sent", Reactions: []model.ReactionAggregate{}}
+	m.AttachmentIDs = attachmentIDs
+	m.MessageType = "text"
+	if len(attachmentIDs) > 0 {
+		m.MessageType = "image"
+	}
 	cr, ok := s.messageRepo.(repository.ConversationMessageRepository)
 	if !ok {
 		return nil, nil, errs.ErrInternal
@@ -165,6 +178,13 @@ func (s *MessageServiceImpl) createConversationMessage(ctx context.Context, acto
 		return nil, nil, errs.ErrInternal
 	}
 	if err != nil {
+		var pe *pgconn.PgError
+		if clientID != "" && errors.As(err, &pe) && pe.Code == "23505" {
+			if old, e := mr.GetByClientMessageID(ctx, clientID, actor, conversationID); e == nil && old != nil {
+				recipients, _ := s.RealtimeRecipients(ctx, actor, conversationID)
+				return old, recipients, nil
+			}
+		}
 		return nil, nil, err
 	}
 	if s.notify != nil {
@@ -248,7 +268,7 @@ func (s *MessageServiceImpl) HandleRealtimeResult(ctx context.Context, actor str
 			return nil, errs.ErrForbidden
 		}
 		content := strings.TrimSpace(e.Content)
-		if content == "" || len(content) > utils.MaxMessageLength {
+		if (content == "" && target.MessageType != "image") || len(content) > utils.MaxMessageLength {
 			return nil, errs.ErrValidation
 		}
 		if err := mr.EditMessage(ctx, e.MessageID, actor, content); err != nil {
@@ -280,7 +300,7 @@ func (s *MessageServiceImpl) HandleRealtimeResult(ctx context.Context, actor str
 		}
 		return &RealtimeResult{Event: e.Event, ConversationID: target.ConversationID, MessageID: target.ID, ReceiverID: target.SenderID}, nil
 	case "message.replied":
-		if strings.TrimSpace(e.Content) == "" || len(strings.TrimSpace(e.Content)) > utils.MaxMessageLength {
+		if (strings.TrimSpace(e.Content) == "" && len(e.AttachmentIDs) == 0) || len(strings.TrimSpace(e.Content)) > utils.MaxMessageLength {
 			return nil, errs.ErrValidation
 		}
 		target, te := mr.GetMessage(ctx, e.MessageID)
@@ -288,17 +308,17 @@ func (s *MessageServiceImpl) HandleRealtimeResult(ctx context.Context, actor str
 			return nil, errs.ErrValidation
 		}
 		var reply *model.Message
-		if !target.IsGroup && e.ClientMessageID == "" {
+		if !target.IsGroup && e.ClientMessageID == "" && len(e.AttachmentIDs) == 0 {
 			now := time.Now().UTC()
 			reply = &model.Message{ID: uuid.NewString(), SenderID: actor, ReceiverID: receiver, Body: strings.TrimSpace(e.Content), ConversationID: e.ConversationID, ReplyToMessageID: e.MessageID, CreatedAt: now, ModifiedAt: now}
 			err = mr.CreateReply(ctx, reply)
 		} else {
-			reply, _, err = s.CreateConversationMessageWithMentions(ctx, actor, e.ConversationID, e.Content, e.ClientMessageID, e.MessageID, e.Mentions)
+			reply, _, err = s.CreateConversationMessageWithAttachments(ctx, actor, e.ConversationID, e.Content, e.ClientMessageID, e.MessageID, e.Mentions, e.AttachmentIDs)
 		}
 		if err != nil {
 			return nil, err
 		}
-		return &RealtimeResult{Event: e.Event, ConversationID: e.ConversationID, MessageID: target.ID, Content: reply.Body, ReceiverID: reply.ReceiverID, ServerID: reply.ID, ClientMessageID: e.ClientMessageID, Mentions: reply.Mentions}, nil
+		return &RealtimeResult{Event: e.Event, ConversationID: e.ConversationID, MessageID: target.ID, Content: reply.Body, ReceiverID: reply.ReceiverID, ServerID: reply.ID, ClientMessageID: e.ClientMessageID, Mentions: reply.Mentions, Attachments: reply.Attachments, MessageType: reply.MessageType}, nil
 	case "message.reaction.added", "message.reaction.removed":
 		reaction := strings.TrimSpace(e.Reaction)
 		if reaction == "" || len([]rune(reaction)) > 16 {
@@ -564,6 +584,7 @@ func (s *MessageServiceImpl) Send(w http.ResponseWriter, r *http.Request) (int, 
 		Content          string                 `json:"content"`
 		ClientMessageID  string                 `json:"client_message_id"`
 		ReplyToMessageID string                 `json:"reply_to_message_id"`
+		AttachmentIDs    []string               `json:"attachment_ids"`
 		Mentions         []model.MessageMention `json:"mentions"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&q) != nil {
@@ -576,7 +597,7 @@ func (s *MessageServiceImpl) Send(w http.ResponseWriter, r *http.Request) (int, 
 		q.ConversationID = pathID
 	}
 	q.Content = strings.TrimSpace(q.Content)
-	if q.ConversationID == "" || q.Content == "" || len(q.Content) > utils.MaxMessageLength {
+	if q.ConversationID == "" || (q.Content == "" && len(q.AttachmentIDs) == 0) || len(q.Content) > utils.MaxMessageLength {
 		return 400, nil, errs.ErrValidation
 	}
 	if uuid.Validate(q.ConversationID) != nil {
@@ -590,6 +611,26 @@ func (s *MessageServiceImpl) Send(w http.ResponseWriter, r *http.Request) (int, 
 	}
 	if q.ReplyToMessageID != "" && uuid.Validate(q.ReplyToMessageID) != nil {
 		return 400, nil, errs.ErrValidation
+	}
+	if len(q.AttachmentIDs) > 0 {
+		m, _, err := s.CreateConversationMessageWithAttachments(r.Context(), uid, q.ConversationID, q.Content, q.ClientMessageID, q.ReplyToMessageID, q.Mentions, q.AttachmentIDs)
+		if err != nil {
+			status := 500
+			if errors.Is(err, errs.ErrValidation) {
+				status = 400
+			}
+			if errors.Is(err, errs.ErrForbidden) || errors.Is(err, errs.ErrNotMember) || errors.Is(err, errs.ErrBlockedRelationship) {
+				status = 403
+			}
+			if errors.Is(err, errs.ErrNotFound) {
+				status = 404
+			}
+			if errors.Is(err, errs.ErrConflict) {
+				status = 409
+			}
+			return status, nil, err
+		}
+		return 201, utils.SuccessResponse(m), nil
 	}
 	c, e := s.conversationRepo.Get(r.Context(), q.ConversationID, uid)
 	if e != nil {
@@ -665,7 +706,7 @@ func (s *MessageServiceImpl) Edit(w http.ResponseWriter, r *http.Request) (int, 
 	var q struct {
 		Content string `json:"content"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&q) != nil || strings.TrimSpace(q.Content) == "" || len(strings.TrimSpace(q.Content)) > utils.MaxMessageLength {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&q) != nil || len(strings.TrimSpace(q.Content)) > utils.MaxMessageLength {
 		return 400, nil, errs.ErrValidation
 	}
 	mr, ok := s.messageRepo.(repository.MessageMutationRepository)
@@ -675,6 +716,12 @@ func (s *MessageServiceImpl) Edit(w http.ResponseWriter, r *http.Request) (int, 
 	messageID := chi.URLParam(r, "messageID")
 	if uuid.Validate(messageID) != nil {
 		return 400, nil, errs.ErrValidation
+	}
+	if strings.TrimSpace(q.Content) == "" {
+		target, err := mr.GetMessage(r.Context(), messageID)
+		if err != nil || target.MessageType != "image" {
+			return 400, nil, errs.ErrValidation
+		}
 	}
 	if e = mr.EditMessage(r.Context(), messageID, uid, strings.TrimSpace(q.Content)); e != nil {
 		return 404, nil, e
@@ -811,9 +858,13 @@ func (s *MessageServiceImpl) Forward(w http.ResponseWriter, r *http.Request) (in
 	if err != nil {
 		return 404, nil, err
 	}
-	m, _, err := s.createConversationMessage(r.Context(), uid, targetID, source.Body, q.ClientMessageID, "", source.ID, nil)
+	ids := []string{}
+	for _, a := range source.Attachments {
+		ids = append(ids, a.ID)
+	}
+	m, _, err := s.createConversationMessage(r.Context(), uid, targetID, source.Body, q.ClientMessageID, "", source.ID, nil, ids...)
 	if err != nil {
-		if errors.Is(err, errs.ErrNotMember) || errors.Is(err, errs.ErrForbidden) {
+		if errors.Is(err, errs.ErrNotMember) || errors.Is(err, errs.ErrForbidden) || errors.Is(err, errs.ErrBlockedRelationship) {
 			return 403, nil, err
 		}
 		return 500, nil, err
@@ -848,4 +899,8 @@ func (s *MessageServiceImpl) reaction(_ http.ResponseWriter, r *http.Request, ad
 		return 500, nil, err
 	}
 	return 200, utils.SuccessResponse(map[string]any{"message_id": mid, "reaction": reaction, "reactions": aggregates, "changed": changed}), nil
+}
+
+func (s *MessageServiceImpl) CreateConversationMessageWithAttachments(ctx context.Context, actor, cid, body, clientID, replyID string, mentions []model.MessageMention, ids []string) (*model.Message, []string, error) {
+	return s.createConversationMessage(ctx, actor, cid, body, clientID, replyID, "", mentions, ids...)
 }

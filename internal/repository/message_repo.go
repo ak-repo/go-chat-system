@@ -66,8 +66,8 @@ func (r *MessageRepositoryImpl) CreateConversationMessage(ctx context.Context, m
 
 func (r *MessageRepositoryImpl) CreateConversationMessageWithMentions(ctx context.Context, msg *model.Message, mentions []model.MessageMention) ([]string, error) {
 	q := `
-		INSERT INTO messages (id, sender_id, receiver_id, body, is_group, created_at, modified_at, conversation_id, client_message_id, reply_to_message_id, forwarded_from_message_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9,'')::uuid, NULLIF($10,'')::uuid, NULLIF($11,'')::uuid)
+		INSERT INTO messages (id, sender_id, receiver_id, body, is_group, created_at, modified_at, conversation_id, client_message_id, reply_to_message_id, forwarded_from_message_id, message_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9,'')::uuid, NULLIF($10,'')::uuid, NULLIF($11,'')::uuid, $12)
 	`
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -118,9 +118,12 @@ func (r *MessageRepositoryImpl) CreateConversationMessageWithMentions(ctx contex
 		}
 		lastEnd = end
 	}
-	_, err = tx.Exec(ctx, q, msg.ID, msg.SenderID, receiver, msg.Body, msg.IsGroup, msg.CreatedAt, msg.ModifiedAt, msg.ConversationID, msg.ClientMessageID, msg.ReplyToMessageID, msg.ForwardedFromMessageID)
+	_, err = tx.Exec(ctx, q, msg.ID, msg.SenderID, receiver, msg.Body, msg.IsGroup, msg.CreatedAt, msg.ModifiedAt, msg.ConversationID, msg.ClientMessageID, msg.ReplyToMessageID, msg.ForwardedFromMessageID, messageKind(msg))
 	if err != nil {
 		return nil, errs.Wrap("repository.MessageRepository.CreateMessage", err)
+	}
+	if err = linkImage(ctx, tx, msg); err != nil {
+		return nil, err
 	}
 	for _, mention := range mentions {
 		var inserted string
@@ -174,7 +177,7 @@ func (r *MessageRepositoryImpl) CreateConversationMessageWithMentions(ctx contex
 		INSERT INTO notifications(id,recipient_id,actor_id,type,conversation_id,message_id,payload,dedupe_key,created_at)
 		SELECT gen_random_uuid(),user_id,$3,notification_type,$2,$1,jsonb_build_object('content',$4::text),$1::text||':'||user_id::text||':'||notification_type,$6::timestamptz
 		FROM allowed ON CONFLICT(dedupe_key) DO NOTHING
-		RETURNING id,recipient_id,actor_id,type,conversation_id,message_id,payload,created_at,read_at`, msg.ID, msg.ConversationID, msg.SenderID, msg.Body, msg.ReplyToMessageID, msg.CreatedAt)
+		RETURNING id,recipient_id,actor_id,type,conversation_id,message_id,payload,created_at,read_at`, msg.ID, msg.ConversationID, msg.SenderID, previewBody(msg), msg.ReplyToMessageID, msg.CreatedAt)
 	if err != nil {
 		return nil, errs.Wrap("repository.Message.Notifications", err)
 	}
@@ -198,9 +201,12 @@ func (r *MessageRepositoryImpl) CreateConversationMessageWithMentions(ctx contex
 }
 func (r *MessageRepositoryImpl) GetMessage(ctx context.Context, id string) (*model.Message, error) {
 	var m model.Message
-	e := r.db.QueryRow(ctx, `SELECT m.id,m.sender_id,COALESCE(m.receiver_id::text,''),m.body,m.is_group,m.created_at,m.modified_at,m.conversation_id,COALESCE(m.client_message_id::text,''),m.edited_at,COALESCE(m.reply_to_message_id::text,''),COALESCE(m.forwarded_from_message_id::text,''),COALESCE(d.status,'sent') FROM messages m LEFT JOIN message_deliveries d ON d.message_id=m.id AND d.recipient_id=m.receiver_id WHERE m.id=$1 AND m.deleted_at IS NULL`, id).Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Body, &m.IsGroup, &m.CreatedAt, &m.ModifiedAt, &m.ConversationID, &m.ClientMessageID, &m.EditedAt, &m.ReplyToMessageID, &m.ForwardedFromMessageID, &m.Status)
+	e := r.db.QueryRow(ctx, `SELECT m.id,m.sender_id,COALESCE(m.receiver_id::text,''),m.body,m.message_type,m.is_group,m.created_at,m.modified_at,m.conversation_id,COALESCE(m.client_message_id::text,''),m.edited_at,COALESCE(m.reply_to_message_id::text,''),COALESCE(m.forwarded_from_message_id::text,''),COALESCE(d.status,'sent') FROM messages m LEFT JOIN message_deliveries d ON d.message_id=m.id AND d.recipient_id=m.receiver_id WHERE m.id=$1 AND m.deleted_at IS NULL`, id).Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Body, &m.MessageType, &m.IsGroup, &m.CreatedAt, &m.ModifiedAt, &m.ConversationID, &m.ClientMessageID, &m.EditedAt, &m.ReplyToMessageID, &m.ForwardedFromMessageID, &m.Status)
 	if e == pgx.ErrNoRows {
 		return nil, errs.ErrNotFound
+	}
+	if e == nil {
+		m.Attachments, e = attachmentsForMessage(ctx, r.db, m.ID)
 	}
 	return &m, errs.Wrap("repository.Message.Get", e)
 }
@@ -212,7 +218,7 @@ func (r *MessageRepositoryImpl) GetMessagesByConversation(ctx context.Context, c
 	} else if err != nil {
 		return nil, errs.Wrap("repository.Message.History", err)
 	}
-	rows, err := r.db.Query(ctx, `SELECT m.id,m.sender_id,COALESCE(m.receiver_id::text,''),m.body,m.is_group,m.created_at,m.modified_at,m.conversation_id,COALESCE(m.client_message_id::text,''),m.edited_at,COALESCE(m.reply_to_message_id::text,''),COALESCE(m.forwarded_from_message_id::text,''),COALESCE(d.status,'sent') FROM conversation_members cm JOIN conversations c ON c.id=cm.conversation_id JOIN messages m ON m.conversation_id=c.id LEFT JOIN message_deliveries d ON d.message_id=m.id AND d.recipient_id=$2 WHERE cm.conversation_id=$1 AND cm.user_id=$2 AND cm.left_at IS NULL AND m.deleted_at IS NULL AND (c.kind='direct' OR m.created_at>=cm.joined_at) ORDER BY m.created_at,m.id LIMIT $3 OFFSET $4`, cid, uid, limit, offset)
+	rows, err := r.db.Query(ctx, `SELECT m.id,m.sender_id,COALESCE(m.receiver_id::text,''),m.body,m.message_type,m.is_group,m.created_at,m.modified_at,m.conversation_id,COALESCE(m.client_message_id::text,''),m.edited_at,COALESCE(m.reply_to_message_id::text,''),COALESCE(m.forwarded_from_message_id::text,''),COALESCE(d.status,'sent') FROM conversation_members cm JOIN conversations c ON c.id=cm.conversation_id JOIN messages m ON m.conversation_id=c.id LEFT JOIN message_deliveries d ON d.message_id=m.id AND d.recipient_id=$2 WHERE cm.conversation_id=$1 AND cm.user_id=$2 AND cm.left_at IS NULL AND m.deleted_at IS NULL AND (c.kind='direct' OR m.created_at>=cm.joined_at) ORDER BY m.created_at,m.id LIMIT $3 OFFSET $4`, cid, uid, limit, offset)
 	if err != nil {
 		return nil, errs.Wrap("repository.Message.History", err)
 	}
@@ -220,7 +226,7 @@ func (r *MessageRepositoryImpl) GetMessagesByConversation(ctx context.Context, c
 	out := model.Messages{}
 	for rows.Next() {
 		var m model.Message
-		if err = rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Body, &m.IsGroup, &m.CreatedAt, &m.ModifiedAt, &m.ConversationID, &m.ClientMessageID, &m.EditedAt, &m.ReplyToMessageID, &m.ForwardedFromMessageID, &m.Status); err != nil {
+		if err = rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Body, &m.MessageType, &m.IsGroup, &m.CreatedAt, &m.ModifiedAt, &m.ConversationID, &m.ClientMessageID, &m.EditedAt, &m.ReplyToMessageID, &m.ForwardedFromMessageID, &m.Status); err != nil {
 			return nil, errs.Wrap("repository.Message.History", err)
 		}
 		out = append(out, &m)
@@ -236,9 +242,12 @@ func (r *MessageRepositoryImpl) GetMessagesByConversation(ctx context.Context, c
 
 func (r *MessageRepositoryImpl) GetVisibleMessage(ctx context.Context, id, uid string) (*model.Message, error) {
 	var m model.Message
-	err := r.db.QueryRow(ctx, `SELECT m.id,m.sender_id,COALESCE(m.receiver_id::text,''),m.body,m.is_group,m.created_at,m.modified_at,m.conversation_id,COALESCE(m.client_message_id::text,''),m.edited_at,COALESCE(m.reply_to_message_id::text,''),COALESCE(m.forwarded_from_message_id::text,''),'sent' FROM messages m JOIN conversations c ON c.id=m.conversation_id JOIN conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=$2 AND cm.left_at IS NULL WHERE m.id=$1 AND m.deleted_at IS NULL AND (c.kind='direct' OR m.created_at>=cm.joined_at)`, id, uid).Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Body, &m.IsGroup, &m.CreatedAt, &m.ModifiedAt, &m.ConversationID, &m.ClientMessageID, &m.EditedAt, &m.ReplyToMessageID, &m.ForwardedFromMessageID, &m.Status)
+	err := r.db.QueryRow(ctx, `SELECT m.id,m.sender_id,COALESCE(m.receiver_id::text,''),m.body,m.message_type,m.is_group,m.created_at,m.modified_at,m.conversation_id,COALESCE(m.client_message_id::text,''),m.edited_at,COALESCE(m.reply_to_message_id::text,''),COALESCE(m.forwarded_from_message_id::text,''),'sent' FROM messages m JOIN conversations c ON c.id=m.conversation_id JOIN conversation_members cm ON cm.conversation_id=c.id AND cm.user_id=$2 AND cm.left_at IS NULL WHERE m.id=$1 AND m.deleted_at IS NULL AND (c.kind='direct' OR m.created_at>=cm.joined_at)`, id, uid).Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Body, &m.MessageType, &m.IsGroup, &m.CreatedAt, &m.ModifiedAt, &m.ConversationID, &m.ClientMessageID, &m.EditedAt, &m.ReplyToMessageID, &m.ForwardedFromMessageID, &m.Status)
 	if err == pgx.ErrNoRows {
 		return nil, errs.ErrNotFound
+	}
+	if err == nil {
+		m.Attachments, err = attachmentsForMessage(ctx, r.db, m.ID)
 	}
 	return &m, errs.Wrap("repository.Message.Visible", err)
 }
@@ -298,6 +307,11 @@ func reactionAggregates(ctx context.Context, q reactionQuerier, messageID, uid s
 }
 func (r *MessageRepositoryImpl) hydrateInteractions(ctx context.Context, uid string, messages model.Messages) error {
 	for _, m := range messages {
+		var mediaErr error
+		m.Attachments, mediaErr = attachmentsForMessage(ctx, r.db, m.ID)
+		if mediaErr != nil {
+			return mediaErr
+		}
 		a, err := reactionAggregates(ctx, r.db, m.ID, uid)
 		if err != nil {
 			return err
@@ -311,7 +325,7 @@ func (r *MessageRepositoryImpl) hydrateInteractions(ctx context.Context, uid str
 			if err != nil {
 				return nil
 			}
-			return &model.MessagePreview{ID: source.ID, SenderID: source.SenderID, Content: source.Body}
+			return &model.MessagePreview{ID: source.ID, SenderID: source.SenderID, Content: previewBody(source)}
 		}
 		m.ReplyTo = preview(m.ReplyToMessageID)
 		m.ForwardedFrom = preview(m.ForwardedFromMessageID)
@@ -363,7 +377,7 @@ func (r *MessageRepositoryImpl) ActiveRecipients(ctx context.Context, cid, actor
 }
 func (r *MessageRepositoryImpl) GetByClientMessageID(ctx context.Context, cid, sender, conversation string) (*model.Message, error) {
 	var m model.Message
-	e := r.db.QueryRow(ctx, `SELECT m.id,m.sender_id,COALESCE(m.receiver_id::text,''),m.body,m.is_group,m.created_at,m.modified_at,m.conversation_id,COALESCE(m.client_message_id::text,''),m.edited_at,COALESCE(m.reply_to_message_id::text,''),COALESCE(m.forwarded_from_message_id::text,''),COALESCE(d.status,'sent') FROM messages m LEFT JOIN message_deliveries d ON d.message_id=m.id AND d.recipient_id=m.receiver_id WHERE m.client_message_id=$1 AND m.sender_id=$2 AND m.conversation_id=$3`, cid, sender, conversation).Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Body, &m.IsGroup, &m.CreatedAt, &m.ModifiedAt, &m.ConversationID, &m.ClientMessageID, &m.EditedAt, &m.ReplyToMessageID, &m.ForwardedFromMessageID, &m.Status)
+	e := r.db.QueryRow(ctx, `SELECT m.id,m.sender_id,COALESCE(m.receiver_id::text,''),m.body,m.message_type,m.is_group,m.created_at,m.modified_at,m.conversation_id,COALESCE(m.client_message_id::text,''),m.edited_at,COALESCE(m.reply_to_message_id::text,''),COALESCE(m.forwarded_from_message_id::text,''),COALESCE(d.status,'sent') FROM messages m LEFT JOIN message_deliveries d ON d.message_id=m.id AND d.recipient_id=m.receiver_id WHERE m.client_message_id=$1 AND m.sender_id=$2 AND m.conversation_id=$3`, cid, sender, conversation).Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Body, &m.MessageType, &m.IsGroup, &m.CreatedAt, &m.ModifiedAt, &m.ConversationID, &m.ClientMessageID, &m.EditedAt, &m.ReplyToMessageID, &m.ForwardedFromMessageID, &m.Status)
 	if e == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -378,7 +392,7 @@ func (r *MessageRepositoryImpl) GetByClientMessageID(ctx context.Context, cid, s
 
 func (r *MessageRepositoryImpl) GetMessagesByReceiver(ctx context.Context, receiverID string, limit, offset int) (model.Messages, error) {
 	query := `
-		SELECT m.id, m.sender_id, m.receiver_id, m.body, m.is_group, m.created_at, m.modified_at, m.conversation_id, COALESCE(m.client_message_id::text,''), m.edited_at, COALESCE(m.reply_to_message_id::text,''), COALESCE(m.forwarded_from_message_id::text,''), COALESCE(d.status,'sent')
+		SELECT m.id, m.sender_id, m.receiver_id, m.body, m.message_type, m.is_group, m.created_at, m.modified_at, m.conversation_id, COALESCE(m.client_message_id::text,''), m.edited_at, COALESCE(m.reply_to_message_id::text,''), COALESCE(m.forwarded_from_message_id::text,''), COALESCE(d.status,'sent')
 		FROM messages m LEFT JOIN message_deliveries d ON d.message_id=m.id AND d.recipient_id=m.receiver_id
 		WHERE m.receiver_id = $1 AND m.deleted_at IS NULL
 		ORDER BY m.created_at ASC, m.id ASC
@@ -393,7 +407,7 @@ func (r *MessageRepositoryImpl) GetMessagesByReceiver(ctx context.Context, recei
 	var messages model.Messages
 	for rows.Next() {
 		var msg model.Message
-		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.ReceiverID, &msg.Body, &msg.IsGroup, &msg.CreatedAt, &msg.ModifiedAt, &msg.ConversationID, &msg.ClientMessageID, &msg.EditedAt, &msg.ReplyToMessageID, &msg.ForwardedFromMessageID, &msg.Status); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.ReceiverID, &msg.Body, &msg.MessageType, &msg.IsGroup, &msg.CreatedAt, &msg.ModifiedAt, &msg.ConversationID, &msg.ClientMessageID, &msg.EditedAt, &msg.ReplyToMessageID, &msg.ForwardedFromMessageID, &msg.Status); err != nil {
 			return nil, errs.Wrap("repository.MessageRepository.GetMessagesByReceiver", err)
 		}
 		messages = append(messages, &msg)
@@ -403,7 +417,7 @@ func (r *MessageRepositoryImpl) GetMessagesByReceiver(ctx context.Context, recei
 
 func (r *MessageRepositoryImpl) GetMessagesBetweenUsers(ctx context.Context, senderID, receiverID string, limit, offset int) (model.Messages, error) {
 	query := `
-		SELECT m.id, m.sender_id, m.receiver_id, m.body, m.is_group, m.created_at, m.modified_at, m.conversation_id, COALESCE(m.client_message_id::text,''), m.edited_at, COALESCE(m.reply_to_message_id::text,''), COALESCE(m.forwarded_from_message_id::text,''), COALESCE(d.status,'sent')
+		SELECT m.id, m.sender_id, m.receiver_id, m.body, m.message_type, m.is_group, m.created_at, m.modified_at, m.conversation_id, COALESCE(m.client_message_id::text,''), m.edited_at, COALESCE(m.reply_to_message_id::text,''), COALESCE(m.forwarded_from_message_id::text,''), COALESCE(d.status,'sent')
 		FROM messages m LEFT JOIN message_deliveries d ON d.message_id=m.id AND d.recipient_id=m.receiver_id
 		WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1)) AND m.deleted_at IS NULL
 		ORDER BY m.created_at ASC, m.id ASC
@@ -418,7 +432,7 @@ func (r *MessageRepositoryImpl) GetMessagesBetweenUsers(ctx context.Context, sen
 	var messages model.Messages
 	for rows.Next() {
 		var msg model.Message
-		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.ReceiverID, &msg.Body, &msg.IsGroup, &msg.CreatedAt, &msg.ModifiedAt, &msg.ConversationID, &msg.ClientMessageID, &msg.EditedAt, &msg.ReplyToMessageID, &msg.ForwardedFromMessageID, &msg.Status); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.SenderID, &msg.ReceiverID, &msg.Body, &msg.MessageType, &msg.IsGroup, &msg.CreatedAt, &msg.ModifiedAt, &msg.ConversationID, &msg.ClientMessageID, &msg.EditedAt, &msg.ReplyToMessageID, &msg.ForwardedFromMessageID, &msg.Status); err != nil {
 			return nil, errs.Wrap("repository.MessageRepository.GetMessagesBetweenUsers", err)
 		}
 		messages = append(messages, &msg)
@@ -558,4 +572,17 @@ func (r *MessageRepositoryImpl) MarkAllActiveRead(ctx context.Context, uid strin
 		return nil, errs.Wrap("repository.Message.MarkAllRead", err)
 	}
 	return receipts, nil
+}
+
+func messageKind(m *model.Message) string {
+	if len(m.AttachmentIDs) > 0 || len(m.Attachments) > 0 {
+		return "image"
+	}
+	return "text"
+}
+func previewBody(m *model.Message) string {
+	if m.Body == "" && m.MessageType == "image" {
+		return "Image"
+	}
+	return m.Body
 }

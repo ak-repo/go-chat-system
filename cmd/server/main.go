@@ -62,6 +62,7 @@ func main() {
 	<-quit
 	logger.L().Info("shutting down system")
 
+	routes.StopMediaWorker()
 	// Stop WebSocket hub first
 	if routes.GlobalHub != nil {
 		routes.GlobalHub.Stop()

@@ -377,3 +377,33 @@ func waitEvent(t *testing.T, events <-chan *WSMessage, name string) *WSMessage {
 		}
 	}
 }
+
+type imageHubService struct {
+	fakeHubMessageService
+	actor string
+	ids   []string
+}
+
+func (f *imageHubService) CreateConversationMessageWithAttachments(_ context.Context, actor, _, _, _, _ string, _ []model.MessageMention, ids []string) (*model.Message, []string, error) {
+	f.actor = actor
+	f.ids = ids
+	return f.msg, f.recipients, f.err
+}
+func TestImageResultUsesAuthenticatedActorAndCanonicalMetadata(t *testing.T) {
+	s := &imageHubService{fakeHubMessageService: fakeHubMessageService{msg: &model.Message{ID: "server", SenderID: "actor", ReceiverID: "recipient", ConversationID: "conversation", MessageType: "image", Attachments: []model.Attachment{{ID: "image", State: "ready"}}, CreatedAt: time.Now()}}}
+	hub := NewHub(s)
+	result := hub.imageResult(&WSMessage{SenderID: "forged", Data: json.RawMessage(`{"conversation_id":"conversation","content":"","client_message_id":"00000000-0000-4000-8000-000000000001","attachment_ids":["image"],"sender_id":"forged"}`)}, "actor")
+	if result.err != nil {
+		t.Fatal(result.err)
+	}
+	if s.actor != "actor" || len(s.ids) != 1 || result.message.SenderID != "actor" {
+		t.Fatalf("identity or attachments: %#v", result)
+	}
+	var payload struct {
+		MessageType string             `json:"message_type"`
+		Attachments []model.Attachment `json:"attachments"`
+	}
+	if err := json.Unmarshal(result.message.Data, &payload); err != nil || payload.MessageType != "image" || len(payload.Attachments) != 1 {
+		t.Fatalf("payload=%#v %v", payload, err)
+	}
+}

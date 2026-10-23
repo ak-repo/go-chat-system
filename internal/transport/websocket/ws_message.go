@@ -65,6 +65,11 @@ func (m *WSMessage) Validate() error {
 	}
 	switch m.Event {
 	case EventMessage:
+		if hasImageIDs(m.Data) {
+			if err := required("conversation_id"); err != nil {
+				return err
+			}
+		}
 		if m.ReceiverType != ReceiverUser && m.ReceiverType != ReceiverGroup {
 			return errors.New("message requires a receiver type")
 		}
@@ -72,7 +77,13 @@ func (m *WSMessage) Validate() error {
 			return errors.New("message requires a user receiver")
 		}
 		if m.ReceiverType == ReceiverGroup {
+			if hasImageIDs(m.Data) {
+				return required("conversation_id")
+			}
 			return required("content", "conversation_id")
+		}
+		if hasImageIDs(m.Data) {
+			return required("conversation_id")
 		}
 		return required("content")
 	case EventEdited, EventReplied:
@@ -82,7 +93,11 @@ func (m *WSMessage) Validate() error {
 		if m.ReceiverType == ReceiverUser && m.ReceiverID == "" {
 			return errors.New("mutation requires a user receiver")
 		}
-		if err := required("message_id", "content", "conversation_id"); err != nil {
+		fields := []string{"message_id", "content", "conversation_id"}
+		if m.Event == EventReplied && hasImageIDs(m.Data) {
+			fields = []string{"message_id", "conversation_id"}
+		}
+		if err := required(fields...); err != nil {
 			return err
 		}
 		var x struct{ Content, ClientMessageID string }

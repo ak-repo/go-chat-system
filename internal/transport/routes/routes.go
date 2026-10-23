@@ -8,6 +8,7 @@ import (
 	"github.com/ak-repo/go-chat-system/internal/platform/database"
 	"github.com/ak-repo/go-chat-system/internal/repository"
 	"github.com/ak-repo/go-chat-system/internal/shared/jwt"
+	httptransport "github.com/ak-repo/go-chat-system/internal/transport/http"
 	"github.com/ak-repo/go-chat-system/internal/transport/injector"
 	mdware "github.com/ak-repo/go-chat-system/internal/transport/middleware"
 	"github.com/ak-repo/go-chat-system/internal/transport/websocket"
@@ -16,6 +17,7 @@ import (
 )
 
 var GlobalHub *websocket.Hub
+var StopMediaWorker = func() {}
 
 func Router() chi.Router {
 	r := chi.NewRouter()
@@ -28,6 +30,10 @@ func Router() chi.Router {
 
 	// injector -> contains all services and repository
 	app := injector.Init()
+	mediaCtx, cancelMedia := context.WithCancel(context.Background())
+	mediaDone := make(chan struct{})
+	go func() { defer close(mediaDone); app.AttachmentService.Run(mediaCtx) }()
+	StopMediaWorker = func() { cancelMedia(); <-mediaDone }
 
 	// ---------------- API v1 ----------------
 	r.Route("/api/v1", func(v1 chi.Router) {
@@ -104,6 +110,13 @@ func Router() chi.Router {
 				b.Post("/unblock", wrapper.HTTPResponseWrapper(app.BlockService.UnblockUser))
 			})
 
+			attachments := &httptransport.AttachmentHandler{Service: app.AttachmentService}
+			pr.Get("/media/capabilities", wrapper.HTTPResponseWrapper(attachments.Capabilities))
+			pr.Post("/conversations/{conversationID}/attachments", wrapper.HTTPResponseWrapper(attachments.Initiate))
+			pr.Post("/attachments/{attachmentID}/complete", wrapper.HTTPResponseWrapper(attachments.Complete))
+			pr.Get("/attachments/{attachmentID}", wrapper.HTTPResponseWrapper(attachments.Status))
+			pr.Delete("/attachments/{attachmentID}", wrapper.HTTPResponseWrapper(attachments.Cancel))
+			pr.Get("/messages/{messageID}/attachments/{attachmentID}/url", wrapper.HTTPResponseWrapper(attachments.URL))
 			// Messages
 			pr.Get("/conversations/{conversationID}/messages", wrapper.HTTPResponseWrapper(app.MessageHTTPService.History))
 			pr.Post("/conversations/{conversationID}/messages", wrapper.HTTPResponseWrapper(app.MessageHTTPService.Send))

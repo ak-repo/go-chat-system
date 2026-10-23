@@ -7,6 +7,7 @@ import (
 
 // Common (global) errors
 var (
+	ErrUnavailable       = errors.New("image storage unavailable")
 	ErrInternal          = errors.New("internal error")
 	ErrNotFound          = errors.New("resource not found")
 	ErrBadRequest        = errors.New("invalid input")

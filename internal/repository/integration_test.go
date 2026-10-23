@@ -68,6 +68,11 @@ func applyIntegrationMigrations(t *testing.T, ctx context.Context, pool *pgxpool
 			return exists, err
 		}},
 	}
+	migrations = append(migrations, integrationMigration{"20261021120000_image_attachments.sql", func(ctx context.Context, db *pgxpool.Pool) (bool, error) {
+		var exists bool
+		err := db.QueryRow(ctx, "SELECT to_regclass('public.attachments') IS NOT NULL").Scan(&exists)
+		return exists, err
+	}})
 	for _, migration := range migrations {
 		applied, err := migration.applied(ctx, pool)
 		if err != nil {
@@ -111,7 +116,7 @@ func integrationDB(t *testing.T) *pgxpool.Pool {
 	migrationMu.Lock()
 	defer migrationMu.Unlock()
 	applyIntegrationMigrations(t, ctx, pool)
-	if _, err := pool.Exec(ctx, `TRUNCATE TABLE group_invites, notifications, notification_preferences, message_mentions, message_reactions, conversation_read_state, conversation_user_state, message_deliveries, messages, conversation_members, conversations, account_tokens, sessions, friend_requests, blocks, friends, users CASCADE`); err != nil {
+	if _, err := pool.Exec(ctx, `TRUNCATE TABLE message_attachments, attachments, group_invites, notifications, notification_preferences, message_mentions, message_reactions, conversation_read_state, conversation_user_state, message_deliveries, messages, conversation_members, conversations, account_tokens, sessions, friend_requests, blocks, friends, users CASCADE`); err != nil {
 		t.Fatalf("reset test database: %v", err)
 	}
 	return pool

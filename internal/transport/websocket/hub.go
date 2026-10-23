@@ -294,6 +294,10 @@ func (h *Hub) dispatch(msg *WSMessage) {
 		}
 		return
 	} // deliberately ephemeral
+	if msg.Event == EventMessage && hasImageIDs(msg.Data) {
+		go h.dispatchImage(msg, actor)
+		return
+	}
 	if msg.Event != EventMessage {
 		h.dispatchMutation(msg, actor)
 		return
@@ -361,7 +365,7 @@ func (h *Hub) dispatch(msg *WSMessage) {
 				return
 			}
 		}
-		data, _ := json.Marshal(map[string]any{"message_id": persisted.ID, "client_message_id": clientID, "content": persisted.Body, "conversation_id": persisted.ConversationID, "timestamp": persisted.CreatedAt.Format(time.RFC3339Nano), "mentions": persisted.Mentions})
+		data, _ := json.Marshal(map[string]any{"message_id": persisted.ID, "client_message_id": clientID, "content": persisted.Body, "conversation_id": persisted.ConversationID, "timestamp": persisted.CreatedAt.Format(time.RFC3339Nano), "mentions": persisted.Mentions, "attachments": persisted.Attachments, "message_type": persisted.MessageType})
 		h.sendResult(&deliveryResult{actor: actor, recipients: recipients, message: &WSMessage{Event: EventMessage, SenderID: actor, ReceiverID: persisted.ReceiverID, ReceiverType: msg.ReceiverType, Data: data}})
 	}()
 }
@@ -416,6 +420,10 @@ func (h *Hub) dispatchSync(msg *WSMessage) {
 	correlation := messageCorrelation(msg.Data)
 	if err := msg.Validate(); err != nil {
 		h.sendErrorToUserWithCorrelation(actor, err.Error(), "invalid_event", correlation)
+		return
+	}
+	if msg.Event == EventMessage && hasImageIDs(msg.Data) {
+		h.dispatchImageSync(msg, actor)
 		return
 	}
 	if msg.Event != EventMessage {
@@ -484,7 +492,7 @@ func (h *Hub) dispatchSync(msg *WSMessage) {
 			return
 		}
 	}
-	data, _ := json.Marshal(map[string]any{"message_id": persisted.ID, "client_message_id": cid, "content": persisted.Body, "conversation_id": persisted.ConversationID, "timestamp": persisted.CreatedAt.Format(time.RFC3339Nano), "mentions": persisted.Mentions})
+	data, _ := json.Marshal(map[string]any{"message_id": persisted.ID, "client_message_id": cid, "content": persisted.Body, "conversation_id": persisted.ConversationID, "timestamp": persisted.CreatedAt.Format(time.RFC3339Nano), "mentions": persisted.Mentions, "attachments": persisted.Attachments, "message_type": persisted.MessageType})
 	out := &WSMessage{Event: EventMessage, SenderID: actor, ReceiverID: persisted.ReceiverID, ReceiverType: msg.ReceiverType, Data: data}
 	if msg.ReceiverType == ReceiverGroup {
 		h.sendToRecipients(out, recipients)
@@ -514,17 +522,17 @@ func (h *Hub) dispatchMutation(msg *WSMessage, actor string) {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), persistenceTimeout)
 			defer cancel()
-			result, err := s.HandleRealtimeResult(ctx, actor, service.RealtimeEvent{Event: msg.Event, ConversationID: p.ConversationID, MessageID: p.MessageID, Content: p.Content, Reaction: p.Reaction, ClientMessageID: p.ClientMessageID, ReceiverID: msg.ReceiverID, Mentions: p.Mentions})
+			result, err := s.HandleRealtimeResult(ctx, actor, service.RealtimeEvent{Event: msg.Event, ConversationID: p.ConversationID, MessageID: p.MessageID, Content: p.Content, Reaction: p.Reaction, ClientMessageID: p.ClientMessageID, ReceiverID: msg.ReceiverID, Mentions: p.Mentions, AttachmentIDs: p.AttachmentIDs})
 			if err != nil {
-				h.sendResult(&deliveryResult{actor: actor, err: err})
+				h.sendResult(&deliveryResult{actor: actor, correlation: messageCorrelation(msg.Data), err: err})
 				return
 			}
-			data, _ := json.Marshal(map[string]any{"message_id": result.MessageID, "conversation_id": result.ConversationID, "content": result.Content, "server_id": result.ServerID, "client_message_id": result.ClientMessageID, "reaction": result.Reaction, "reactions": result.Reactions, "mentions": result.Mentions})
+			data, _ := json.Marshal(map[string]any{"message_id": result.MessageID, "conversation_id": result.ConversationID, "content": result.Content, "server_id": result.ServerID, "client_message_id": result.ClientMessageID, "reaction": result.Reaction, "reactions": result.Reactions, "mentions": result.Mentions, "attachments": result.Attachments, "message_type": result.MessageType})
 			var recipients []string
 			if msg.ReceiverType == ReceiverGroup {
 				recipients, err = h.realtimeRecipients(actor, result.ConversationID)
 				if err != nil {
-					h.sendResult(&deliveryResult{actor: actor, err: err})
+					h.sendResult(&deliveryResult{actor: actor, correlation: messageCorrelation(msg.Data), err: err})
 					return
 				}
 				recipients = append(recipients, actor)
@@ -546,6 +554,7 @@ type mutationData struct {
 	Reaction        string                 `json:"reaction"`
 	ClientMessageID string                 `json:"client_message_id"`
 	Mentions        []model.MessageMention `json:"mentions"`
+	AttachmentIDs   []string               `json:"attachment_ids"`
 }
 
 func mutationPayload(msg *WSMessage) (mutationData, error) {
@@ -564,12 +573,12 @@ func (h *Hub) persistMutation(msg *WSMessage, actor string, persist func(context
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), persistenceTimeout)
 	defer cancel()
-	result, err := persist(ctx, actor, service.RealtimeEvent{Event: msg.Event, ConversationID: p.ConversationID, MessageID: p.MessageID, Content: p.Content, Reaction: p.Reaction, ClientMessageID: p.ClientMessageID, ReceiverID: msg.ReceiverID, Mentions: p.Mentions})
+	result, err := persist(ctx, actor, service.RealtimeEvent{Event: msg.Event, ConversationID: p.ConversationID, MessageID: p.MessageID, Content: p.Content, Reaction: p.Reaction, ClientMessageID: p.ClientMessageID, ReceiverID: msg.ReceiverID, Mentions: p.Mentions, AttachmentIDs: p.AttachmentIDs})
 	if err != nil {
 		h.sendDomainError(actor, err)
 		return
 	}
-	data, _ := json.Marshal(map[string]any{"message_id": result.MessageID, "conversation_id": result.ConversationID, "content": result.Content, "server_id": result.ServerID, "client_message_id": result.ClientMessageID, "reaction": result.Reaction, "reactions": result.Reactions, "mentions": result.Mentions})
+	data, _ := json.Marshal(map[string]any{"message_id": result.MessageID, "conversation_id": result.ConversationID, "content": result.Content, "server_id": result.ServerID, "client_message_id": result.ClientMessageID, "reaction": result.Reaction, "reactions": result.Reactions, "mentions": result.Mentions, "attachments": result.Attachments, "message_type": result.MessageType})
 	out := &WSMessage{Event: result.Event, SenderID: actor, ReceiverID: result.ReceiverID, ReceiverType: ReceiverUser, Data: data}
 	if msg.ReceiverType == ReceiverGroup {
 		out.ReceiverType = ReceiverGroup
@@ -607,6 +616,9 @@ func (h *Hub) sendDomainError(userID string, err error) {
 }
 func (h *Hub) sendDomainErrorWithCorrelation(userID string, err error, correlation sendCorrelation) {
 	code, message := "internal_error", "event could not be processed"
+	if errors.Is(err, errs.ErrConflict) {
+		code, message = "conflict", "attachment is not ready or already linked"
+	}
 	if errors.Is(err, errs.ErrValidation) || errors.Is(err, errs.ErrBadRequest) {
 		code, message = "invalid_event", "invalid event"
 	}
@@ -696,4 +708,67 @@ func extractMessage(data json.RawMessage) (string, string, error) {
 func extractMessageText(data json.RawMessage) (string, error) {
 	t, _, e := extractMessage(data)
 	return t, e
+}
+
+func hasImageIDs(data json.RawMessage) bool {
+	var p struct {
+		IDs []string `json:"attachment_ids"`
+	}
+	return json.Unmarshal(data, &p) == nil && len(p.IDs) > 0
+}
+func (h *Hub) imageResult(msg *WSMessage, actor string) *deliveryResult {
+	result := &deliveryResult{actor: actor, correlation: messageCorrelation(msg.Data)}
+	var p struct {
+		ConversationID string                 `json:"conversation_id"`
+		Content        string                 `json:"content"`
+		ClientID       string                 `json:"client_message_id"`
+		Mentions       []model.MessageMention `json:"mentions"`
+		IDs            []string               `json:"attachment_ids"`
+	}
+	if json.Unmarshal(msg.Data, &p) != nil || !validClientID(p.ClientID) {
+		result.err = errs.ErrValidation
+		return result
+	}
+	s, ok := h.messageService.(interface {
+		CreateConversationMessageWithAttachments(context.Context, string, string, string, string, string, []model.MessageMention, []string) (*model.Message, []string, error)
+	})
+	if !ok {
+		result.err = errs.ErrInternal
+		return result
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), persistenceTimeout)
+	defer cancel()
+	m, recipients, err := s.CreateConversationMessageWithAttachments(ctx, actor, p.ConversationID, p.Content, p.ClientID, "", p.Mentions, p.IDs)
+	if err != nil {
+		result.err = err
+		return result
+	}
+	data, _ := json.Marshal(map[string]any{"message_id": m.ID, "client_message_id": m.ClientMessageID, "content": m.Body, "conversation_id": m.ConversationID, "timestamp": m.CreatedAt.Format(time.RFC3339Nano), "mentions": m.Mentions, "message_type": m.MessageType, "attachments": m.Attachments})
+	kind := ReceiverUser
+	if m.IsGroup {
+		kind = ReceiverGroup
+	}
+	result.recipients = append(recipients, actor)
+	result.message = &WSMessage{Event: EventMessage, SenderID: actor, ReceiverID: m.ReceiverID, ReceiverType: kind, Data: data}
+	return result
+}
+func (h *Hub) dispatchImage(msg *WSMessage, actor string) { h.sendResult(h.imageResult(msg, actor)) }
+func (h *Hub) dispatchImageSync(msg *WSMessage, actor string) {
+	result := h.imageResult(msg, actor)
+	if result.err != nil {
+		h.sendDomainErrorWithCorrelation(actor, result.err, result.correlation)
+		return
+	}
+	if result.message.ReceiverType == ReceiverGroup {
+		h.sendToRecipients(result.message, result.recipients)
+	} else {
+		h.sendToUser(result.message)
+		copy := *result.message
+		copy.ReceiverID = actor
+		h.sendToUser(&copy)
+	}
+	var p map[string]any
+	_ = json.Unmarshal(result.message.Data, &p)
+	ack, _ := json.Marshal(map[string]any{"server_id": p["message_id"], "client_message_id": p["client_message_id"], "status": "sent", "event": EventMessage})
+	h.sendToUser(&WSMessage{Event: EventAck, ReceiverID: actor, ReceiverType: ReceiverUser, Data: ack})
 }
