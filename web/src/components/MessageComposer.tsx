@@ -28,7 +28,7 @@ export default function MessageComposer({ value, disabled, onChange, onSubmit, o
         if (canSend) event.currentTarget.form?.requestSubmit();
       }
     }} onBlur={onBlur} rows={1} role={mentionCount ? 'combobox' : undefined} aria-autocomplete={mentionCount ? 'list' : undefined} aria-expanded={mentionCount ? true : undefined} aria-controls={mentionCount ? 'mention-suggestions' : undefined} aria-activedescendant={mentionCount ? `mention-option-${activeMention}` : undefined} placeholder={disabled ? 'Reconnect to send' : 'Type a message'} disabled={disabled} />
-    {onImage && <label className="image-picker" aria-disabled={disabled}><span>Image</span><input aria-label="Attach image" type="file" accept="image/jpeg,image/png,image/webp" disabled={disabled} onChange={(event) => { const file = event.target.files?.[0]; if (file) onImage(file); event.target.value = ""; }} /></label>}
+    {!onImage && <span className="text-secondary" title="Image uploads are unavailable on this server">Images unavailable</span>}{onImage && <label className="image-picker" aria-disabled={disabled}><span>Image</span><input aria-label="Attach image" type="file" accept="image/jpeg,image/png,image/webp" disabled={disabled} onChange={(event) => { const file = event.target.files?.[0]; if (file) onImage(file); event.target.value = ""; }} /></label>}
     <button className="send-button" disabled={!canSend} aria-label="Send message" title="Send message"><Icon name="send" width={22} height={22} /></button>
   </form></>;
 }

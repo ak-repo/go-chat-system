@@ -1,14 +1,10 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import { applyTheme, readTheme, THEME_KEY, type Theme } from './theme';
+import { createContext, useContext, type ReactNode } from 'react';
+import { applyTheme, type Theme } from './theme';
 const ThemeContext = createContext<{ theme: Theme; setTheme: (theme: Theme) => void } | null>(null);
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, updateTheme] = useState(readTheme);
-  function setTheme(next: Theme) {
-    applyTheme(next);
-    updateTheme(next);
-    try { localStorage.setItem(THEME_KEY, next); } catch { /* still works without storage */ }
-  }
+  const theme = 'dark' as const;
+  function setTheme() { applyTheme('dark'); }
   return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
 }
 export function useTheme() {

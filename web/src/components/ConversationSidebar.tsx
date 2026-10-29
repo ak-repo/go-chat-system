@@ -6,7 +6,6 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { useConversations } from '../context/ConversationContext';
 import { useDialogs } from '../context/DialogContext';
-import { appName } from '../config/app';
 import Icon from './Icon';
 import NewChatPanel from './NewChatPanel';
 export default function ConversationSidebar() {
@@ -41,9 +40,9 @@ export default function ConversationSidebar() {
     void act(async () => { const result = await markAllRead(); if (!result.success) throw new Error(result.error || 'Could not mark chats read'); clearAllUnread(); for (const receipt of result.data?.receipts ?? []) sendEvent('message.read', receipt.sender_id, { message_id: receipt.message_id, conversation_id: receipt.conversation_id }); });
   }
   return <aside className="chat-sidebar" aria-label={newChat ? 'New chat' : 'Conversations'}>{newChat ? <NewChatPanel /> : <>
-    <header className="chat-sidebar-heading">{archived && <button className="icon-button" aria-label="Back to all chats" onClick={() => setArchived(false)}><Icon name="back" /></button>}<h1>{archived ? 'Archived' : appName}</h1><div className="sidebar-heading-actions"><details className="row-menu"><summary className="icon-button" aria-label="Chat list actions"><Icon name="more" /></summary><div className="row-menu-popover"><button disabled={busy} onClick={readAll}>Mark all as read</button><button onClick={refresh}>Refresh chats</button><button onClick={() => navigate('/conversations/new-group')}>New group</button></div></details><button className="new-chat-button" aria-label="New chat" title="New chat" onClick={() => setNewChat(true)}><Icon name="newChat" /></button></div></header>
+    <header className="chat-sidebar-heading">{archived && <button className="icon-button" aria-label="Back to all chats" onClick={() => setArchived(false)}><Icon name="back" /></button>}<h1>{archived ? 'Archived' : 'Inbox'}</h1><div className="sidebar-heading-actions"><details className="row-menu"><summary className="icon-button" aria-label="Chat list actions"><Icon name="more" /></summary><div className="row-menu-popover"><button disabled={busy} onClick={readAll}>Mark all as read</button><button onClick={refresh}>Refresh chats</button><button onClick={() => navigate('/conversations/new-group')}>New group</button></div></details><button className="new-chat-button" aria-label="New chat" title="New chat" onClick={() => setNewChat(true)}><Icon name="newChat" /></button></div></header>
     <label className="search-box sidebar-search"><Icon name="search" width={20} height={20} /><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search chats" placeholder="Search chats by name" /></label>
-    <div className="sidebar-tabs" role="group" aria-label="Chat filters">{(['all', 'unread', 'groups'] as const).map((value) => <button key={value} aria-pressed={filter === value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value === 'all' ? 'All' : value === 'unread' ? 'Unread' : 'Groups'}</button>)}</div>
+    <button className="sidebar-create-group soft-button" onClick={() => navigate('/conversations/new-group')}>+ Create a group</button><div className="sidebar-tabs" role="group" aria-label="Chat filters">{(['all', 'unread', 'groups'] as const).map((value) => <button key={value} aria-pressed={filter === value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value === 'all' ? 'All' : value === 'unread' ? 'Unread' : 'Groups'}</button>)}</div>
     {(error || actionError) && <div className="inline-alert" role="alert">{error || actionError}<button className="soft-button" onClick={refresh}>Retry</button></div>}
     <div className="sidebar-chat-list scrollbar-thin">
       {!archived && <button className="archive-entry" onClick={() => setArchived(true)}><Icon name="archive" /><span>Archived</span></button>}

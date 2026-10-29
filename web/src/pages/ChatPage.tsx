@@ -115,6 +115,9 @@ export default function ChatPage() {
   const followLatest = useRef(true);
   const olderScroll = useRef<{ height: number; top: number } | null>(null);
   const [showJump, setShowJump] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const detailsRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (showDetails) detailsRef.current?.showModal(); }, [showDetails]);
   const requestVersion = useRef(0);
   const paginationInFlight = useRef<object | null>(null);
   const offsetRef = useRef(0);
@@ -945,6 +948,7 @@ export default function ChatPage() {
           <div className="avatar h-10 w-10">{conversationInitials(title)}</div>
           <div className="chat-topbar-title"><p>{title}</p><span>{conversation.kind === "group" ? `${conversation.member_count} members` : presence[peerId]?.online ? "Online" : presence[peerId] ? "Offline" : ""}</span></div>
           <span className={`connection-pill${isConnected ? ' connected' : ''}`}><i />{isConnected ? "Connected" : "Reconnecting"}</span>
+          <button className="soft-button px-3 py-2" aria-expanded={showDetails} onClick={() => setShowDetails(true)}>Details</button>
           <details className="chat-actions-menu"><summary className="icon-button" aria-label="Conversation actions"><Icon name="more" /></summary><div className="chat-header-actions">
             {conversation.kind === "group" && <Link to={`/conversations/${conversationId}/settings`} className="soft-button px-3 py-2 text-xs">Group details</Link>}
             <button onClick={() => void mutate({ pinned: !conversation.pinned })} className="soft-button px-3 py-2 text-xs">{conversation.pinned ? "Unpin" : "Pin"}</button>
@@ -954,6 +958,14 @@ export default function ChatPage() {
           </div></details>
         </div>
       </header>
+      {showDetails && <dialog ref={detailsRef} className="conversation-details" aria-label="Conversation details" onClose={() => setShowDetails(false)}>
+        <header><h2>Conversation details</h2><button className="icon-button" aria-label="Close details" onClick={() => detailsRef.current?.close()}><Icon name="close" /></button></header>
+        <div className="conversation-avatar">{conversationInitials(title)}</div><h3>{title}</h3>
+        {conversation.kind === 'group' ? <><p>{conversation.description || 'Group conversation'}</p><p>{conversation.member_count} members</p><Link className="primary-button details-link" to={`/conversations/${conversationId}/settings`}>Manage group and members</Link></> : <Link className="primary-button details-link" to={`/users/${peerId}`}>View contact profile</Link>}
+        <button className="soft-button details-link" onClick={() => void mutate({ pinned: !conversation.pinned })}>{conversation.pinned ? 'Unpin conversation' : 'Pin conversation'}</button>
+        <button className="soft-button details-link" onClick={() => void mutate({ mute_minutes: conversation.muted ? 0 : 1440 })}>{conversation.muted ? 'Unmute notifications' : 'Mute for 24 hours'}</button>
+        <button className="soft-button details-link" onClick={() => void mutate({ archived: !conversation.archived })}>{conversation.archived ? 'Unarchive conversation' : 'Archive conversation'}</button>
+      </dialog>}
       {error && (
         <div className="mx-auto w-full max-w-5xl px-4 pt-4 text-sm text-danger sm:px-6">
           {error}
